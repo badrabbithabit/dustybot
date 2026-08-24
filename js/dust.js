@@ -46,9 +46,10 @@ export class DustSystem {
   update(dt, bot, stats, cb) {
     this._stats = stats;
     const W = this.world.W, H = this.world.H;
-    const suckR = stats.suctionRange * stats.suction;
     const pickupR = stats.pickupRadius;
-    const clogMult = bot.clogged ? BALANCE.bin.clogSuctionMult : 1;
+    const canVacuum = !bot.full;
+    const suckR = canVacuum ? stats.suctionRange * stats.suction : 0;
+    const clogMult = canVacuum ? 1 : BALANCE.bin.clogSuctionMult;
 
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];

@@ -64,6 +64,7 @@ export class World {
     c.lineWidth = 4;
     c.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
     // entities
+    this._drawDock(c);
     if (game && game.dust) game.dust.draw(c);
     if (game && game.bot) game.bot.draw(c);
     // tap marker
@@ -73,6 +74,32 @@ export class World {
       c.lineWidth = 2;
       c.beginPath(); c.arc(p.x, p.y, 10, 0, Math.PI * 2); c.stroke();
     }
+  }
+
+  _drawDock(c) {
+    const d = BALANCE.dock;
+    const p = this.toScreen(d.x, d.y);
+    const r = d.triggerR * this.scale;
+    const s = 3.4 * this.scale;
+    c.save();
+    c.translate(p.x, p.y);
+    // pad
+    c.fillStyle = '#1c2735';
+    c.beginPath();
+    c.roundRect(-s / 2, -s / 2, s, s, 8 * this.scale / 2);
+    c.fill();
+    // ring
+    c.strokeStyle = 'rgba(255,213,74,0.5)';
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.stroke();
+    // trash icon
+    c.strokeStyle = '#ffd54a';
+    c.lineWidth = Math.max(1.5, s * 0.045);
+    const bw = s * 0.4, bh = s * 0.34;
+    c.strokeRect(-bw / 2, -bh / 2 + s * 0.06, bw, bh);
+    c.beginPath(); c.moveTo(-bw / 2 - s * 0.07, -bh / 2 + s * 0.06); c.lineTo(bw / 2 + s * 0.07, -bh / 2 + s * 0.06); c.stroke();
+    c.beginPath(); c.moveTo(0, -bh / 2 + s * 0.06 - s * 0.09); c.lineTo(0, -bh / 2 + s * 0.06 - s * 0.02); c.stroke();
+    c.restore();
   }
 
   _drawGrid(c) {

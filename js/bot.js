@@ -11,21 +11,30 @@ export class Bot {
     this.heading = 0;
     this.vx = 0; this.vy = 0;
     this.bin = 0;
+    this.full = false;
     this.boostCd = 0;
     this.boosting = false;
-    this.clogged = false;
     this.alive = true;
     this._brush = 0;
     this.onBoost = null;
   }
 
-  addDust(n) { this.bin = Math.min(this.stats.binMax, this.bin + n); }
-  dumpBin() { const v = this.bin; this.bin = 0; return v; }
+  addDust(n) {
+    this.bin = Math.min(this.stats.binMax, this.bin + n);
+    this.full = this.bin >= BALANCE.bin.fullAt;
+  }
+  dumpBin() {
+    if (this.bin <= 0) return null;
+    const v = this.bin;
+    this.bin = 0;
+    this.full = false;
+    return v;
+  }
 
   update(dt, input) {
     if (!this.alive) return;
     const s = this.stats;
-    this.clogged = this.bin >= BALANCE.bin.clogAt;
+    this.full = this.full && this.bin >= BALANCE.bin.fullAt;
 
     // steering
     let ix = input.x, iy = input.y;
@@ -48,7 +57,7 @@ export class Bot {
     if (wantBoost && !this.boosting) { this.boosting = true; this.onBoost && this.onBoost(); }
     if (!wantBoost) this.boosting = false;
 
-    const clogWeight = this.clogged ? 1 / BALANCE.bin.clogWeightMult : 1;
+    const clogWeight = this.full ? 1 / BALANCE.bin.clogWeightMult : 1;
     const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight;
     const mag = Math.min(1, Math.hypot(ix, iy));
     this.vx = Math.sin(this.heading) * speed * mag;
@@ -86,8 +95,8 @@ export class Bot {
     // top sensor
     c.fillStyle = '#1c2735';
     c.beginPath(); c.arc(0, -r * 0.25, r * 0.34, 0, Math.PI * 2); c.fill();
-    // LED (green ok / red clogged)
-    c.fillStyle = this.clogged ? '#ff4a6a' : '#4aff9e';
+    // LED (green ok / red bin full)
+    c.fillStyle = this.full ? '#ff4a6a' : '#4aff9e';
     c.beginPath(); c.arc(0, -r * 0.25, r * 0.16, 0, Math.PI * 2); c.fill();
     c.restore();
   }

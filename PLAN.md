@@ -41,10 +41,11 @@ upgrades.
 
 ### The "dust comes in" flavor
 Wall vents spawn drifting dust motes on a timer (rate scales with room).
-A **dust bin** fills as you vacuum: at 100% the bot gets a "clogged" debuff
-(-50% suction, +25% weight) and you must dump it at a **dump station** (a
-trash bin prop in a corner). This creates a nice risk loop: hoard dust for
-big shard count, or dump early to stay fast. Dumping gives a small bonus.
+A **dust bin** fills as you vacuum: at 100% the bot **stops vacuuming
+entirely** (suction off) and slows down, until you dump it at the **dock**
+(trash-can pad in the top-middle). Dumping converts bin contents to XP
+(1 XP per mote) — the only reward, no shards. Risk loop: hoard dust for
+bigger XP dumps, or keep the bin light to avoid losing vacuum time.
 
 ## 2. Controls (both, per user request)
 

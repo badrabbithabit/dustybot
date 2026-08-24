@@ -35,6 +35,7 @@ export class Game {
     this.time = 0;
     this._frac = 0;
     this._warned = false;
+    this._fullWarned = false;
     this.dust.reset(BALANCE.dirt.start);
     if (this.bot) this.bot = null;
     this.bot = new Bot(this.world, this.stats);
@@ -89,9 +90,25 @@ export class Game {
 
     // dirt death check
     const frac = this.dust.count / this.stats.dirtCap;
+    if (this.bot.full && !this._fullWarned) {
+      this._fullWarned = true;
+      UI.toast('Bin full — no vacuum! Drive to the dock', 'warn');
+    } else if (!this.bot.full) {
+      this._fullWarned = false;
+    }
     if (frac >= 0.75 && !this._warned) { this._warned = true; Audio.sfx.hurt(); UI.toast('Dirt overload!', 'warn'); }
     if (frac < 0.6) this._warned = false;
     if (this.dust.count >= this.stats.dirtCap) { this.endRun(); return; }
+
+    // dock: empty bin for XP
+    const dock = BALANCE.dock;
+    if (this.bot.bin > 0 &&
+        Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
+      const v = this.bot.dumpBin();
+      Audio.sfx.dump();
+      gainXp(this.stats, v * dock.dumpXpPerMote);
+      UI.toast(`Bin dumped — ${v} motes → XP`, 'good');
+    }
 
     // HUD
     UI.setHud({

@@ -7,7 +7,7 @@
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
   bot: { radius: 1.0, speed: 6.0, boostMult: 1.7, turnRate: 5.0, boostCd: 4.0, boostCdFloor: 1.0 },
-  bin: { max: 100, clogAt: 100, clogSuctionMult: 0.5, clogWeightMult: 1.25 },
+  bin: { max: 100, fullAt: 100, clogSuctionMult: 0.5, clogWeightMult: 1.25 },
   dirt: {
     cap: 150,                       // global dirt at/above this = bot buried (death)
     start: 18,
@@ -24,6 +24,7 @@ export const BALANCE = {
   shardPerLevel: 2,
   metaCost: (base, lvl) => Math.round(base * Math.pow(1.6, lvl)),
   offline: { capHours: 8, basePerHour: 0.8, metaPerHour: 0.05 },
+  dock: { x: 22, y: 3.6, triggerR: 1.9, dumpXpPerMote: 1 },
 };
 
 // ---------------- In-run upgrades (1 of 3 picks on level-up) ----------------
