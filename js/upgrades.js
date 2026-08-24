@@ -1,7 +1,8 @@
 // All balance tables + upgrade logic. Single source of truth for numbers.
-// 2D top-down endless vacuum: no rooms/levels. Dirt spawns continuously and
-// ramps with elapsed time. Death = global dirt hits its cap. XP from dust
-// drives level-ups (upgrade picks). Shards are the persistent meta currency.
+// 2D top-down endless vacuum: no rooms/levels. Dirt (the death pressure)
+// spawns continuously and its rate ramps with LEVEL. Death = global dirt
+// hits its cap. XP from dust drives level-ups (upgrade picks). Shards are
+// the persistent meta currency.
 
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
@@ -10,9 +11,10 @@ export const BALANCE = {
   dirt: {
     cap: 150,                       // global dirt at/above this = bot buried (death)
     start: 18,
-    spawnBase: 1.3,                 // dirt/sec at t=0
-    spawnRamp: 0.03,                // + dirt/sec per second of survival
-    spawnMax: 12,
+    spawnBase: 1.2,                 // dirt/sec at level 1
+    levelRamp: 0.35,                // + dirt/sec per level (main pressure driver)
+    spawnRamp: 0.01,                // small extra dirt/sec per second survived
+    spawnMax: 14,
     moteValue: 1,
     goldChance: 0.03,
   },

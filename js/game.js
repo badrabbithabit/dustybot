@@ -49,10 +49,12 @@ export class Game {
     UI.show('joy');
   }
 
-  // dirt spawn rate ramps with survival time
+  // dirt pressure ramps with level (and a little with time)
   _spawnRate() {
     const r = Math.min(BALANCE.dirt.spawnMax,
-      BALANCE.dirt.spawnBase + BALANCE.dirt.spawnRamp * this.time);
+      BALANCE.dirt.spawnBase +
+      BALANCE.dirt.levelRamp * this.stats.level +
+      BALANCE.dirt.spawnRamp * this.time);
     return r * this.stats.spawnMult;
   }
 
