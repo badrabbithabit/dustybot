@@ -1,118 +1,113 @@
 // All balance tables + upgrade logic. Single source of truth for numbers.
+// 2D top-down endless vacuum: no rooms/levels. Dirt spawns continuously and
+// ramps with elapsed time. Death = global dirt hits its cap. XP from dust
+// drives level-ups (upgrade picks). Shards are the persistent meta currency.
 
 export const BALANCE = {
-  lives: 3,
-  battery: { max: 100, drainMove: 4.0, drainBoost: 12.0, drainIdle: 0.4, padFill: 75 },
+  arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
+  bot: { radius: 1.0, speed: 6.0, boostMult: 1.7, turnRate: 5.0, boostCd: 4.0, boostCdFloor: 1.0 },
   bin: { max: 100, clogAt: 100, clogSuctionMult: 0.5, clogWeightMult: 1.25 },
-  bot: { radius: 1.0, speed: 6.0, boostMult: 2.0, turnRate: 4.5, boostCd: 4.0, boostCdFloor: 1.0, boostDrainMult: 3.0 },
-  room: {
-    size: 26,               // half-extent of floor
-    wall: 1.0,
-    dustBudget: r => 90 + 22 * r,
-    hazardCount: r => Math.min(14, 2 + Math.ceil(r * 1.2)),
-    spawnRate: r => Math.min(6, 1 + r * 0.35),      // motes/sec from vents
-    moteValue: r => 1 + 0.1 * r,
-    ventCount: r => Math.min(6, 2 + Math.floor(r / 2)),
-    obstacleCount: r => Math.min(8, 1 + Math.floor(r / 2)),
-    shardBonus: r => 2 + Math.round(r * 0.8),
+  dirt: {
+    cap: 150,                       // global dirt at/above this = bot buried (death)
+    start: 18,
+    spawnBase: 1.3,                 // dirt/sec at t=0
+    spawnRamp: 0.03,                // + dirt/sec per second of survival
+    spawnMax: 12,
+    moteValue: 1,
+    goldChance: 0.03,
   },
+  xp: { curve: lvl => 12 + 6 * lvl, maxLevel: 30 },   // XP needed to go lvl -> lvl+1
+  shardPerDust: 0.05,
+  shardPerSecond: 0.05,             // passive shard trickle
+  shardPerLevel: 2,
   metaCost: (base, lvl) => Math.round(base * Math.pow(1.6, lvl)),
   offline: { capHours: 8, basePerHour: 0.8, metaPerHour: 0.05 },
-  shardPerDust: 0.1,
 };
 
-// ---------------- In-run upgrades (1 of 3 picks) ----------------
+// ---------------- In-run upgrades (1 of 3 picks on level-up) ----------------
 export const RUN_UPGRADES = [
   { id: 'suction', name: 'Suction Core', icon: '🌀', max: 5, weight: 3,
     desc: lvl => `+20% suction & range, +5 bin (L${lvl})`,
-    apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.4; s.binMax += 5; } },
+    apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.5; s.binMax += 5; } },
   { id: 'brush', name: 'Turbo Brush', icon: '🪥', max: 5, weight: 3,
     desc: lvl => `+15% pickup radius (L${lvl})`,
     apply: (s, n) => { s.pickupRadius *= 1.15; } },
   { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 3,
     desc: lvl => `+10% speed & turning (L${lvl})`,
     apply: (s, n) => { s.speed *= 1.10; s.turnRate *= 1.10; } },
-  { id: 'battery', name: 'Battery Cell', icon: '🔋', max: 5, weight: 3,
-    desc: lvl => `+25% max battery, -5% drain (L${lvl})`,
-    apply: (s, n) => { s.batteryMax *= 1.25; s.drainMult *= 0.95; } },
+  { id: 'bin', name: 'Extra Hopper', icon: '📦', max: 5, weight: 3,
+    desc: lvl => `+25 bin capacity (L${lvl})`,
+    apply: (s, n) => { s.binMax += 25; } },
   { id: 'magnet', name: 'Magnet Motor', icon: '🧲', max: 3, weight: 2,
     desc: lvl => `+15% dust pull distance (L${lvl})`,
-    apply: (s, n) => { s.magnetRange += 1.2; } },
+    apply: (s, n) => { s.magnetRange += 1.4; } },
   { id: 'overdrive', name: 'Overdrive', icon: '🔥', max: 3, weight: 2,
     desc: lvl => `-20% boost cooldown (L${lvl})`,
     apply: (s, n) => { s.boostCdMult *= 0.8; } },
   { id: 'merchant', name: 'Scrap Merchant', icon: '🪙', max: 3, weight: 2,
     desc: lvl => `+15% dust→shard conversion (L${lvl})`,
     apply: (s, n) => { s.shardMult *= 1.15; } },
-  { id: 'shield', name: 'Nano Shield', icon: '🛡️', max: 2, weight: 1,
-    desc: lvl => `+1 max life, heal 1 (L${lvl})`,
-    apply: (s, n) => { s.maxLives += 1; s.lives = Math.min(s.maxLives, s.lives + 1); } },
-  { id: 'vents', name: 'Smart Vents', icon: '💨', max: 1, weight: 1,
-    desc: () => 'A wall vent becomes a charger pad',
-    apply: (s, n) => { s.chargerVents += 1; } },
-  { id: 'junk', name: 'Junk Filter', icon: '♻️', max: 1, weight: 1,
-    desc: () => 'Hazmat dust +50% value, no splash',
-    apply: (s, n) => { s.hazmatValueMult *= 1.5; s.hazmatSafe = true; } },
+  { id: 'clean', name: 'Air Scrubbers', icon: '🌫️', max: 3, weight: 2,
+    desc: lvl => `Dirt spawns 10% slower (L${lvl})`,
+    apply: (s, n) => { s.spawnMult *= 0.9; } },
+  { id: 'cap', name: 'Deep Storage', icon: '🧯', max: 3, weight: 2,
+    desc: lvl => `+15 dirt before the bury (L${lvl})`,
+    apply: (s, n) => { s.dirtCap += 15; } },
+  { id: 'junk', name: 'Gold Bristles', icon: '🍀', max: 2, weight: 1,
+    desc: lvl => `+3% golden dust chance (L${lvl})`,
+    apply: (s, n) => { s.goldChance += 0.03; } },
 ];
 
-// ---------------- Meta upgrades (shards, persist) ----------------
+// ---------------- Meta upgrades (shards, persist across runs) ----------------
 export const META_UPGRADES = [
   { id: 'meta_suction', name: 'Factory Suction', icon: '🌀', base: 20, max: 10,
     desc: lvl => `+5% suction (L${lvl})` },
   { id: 'meta_speed', name: 'Chassis Rollers', icon: '⚡', base: 20, max: 10,
     desc: lvl => `+4% move speed (L${lvl})` },
-  { id: 'meta_battery', name: 'Deep Battery', icon: '🔋', base: 30, max: 10,
-    desc: lvl => `+6% max battery (L${lvl})` },
+  { id: 'meta_bin', name: 'Wider Hopper', icon: '📦', base: 25, max: 10,
+    desc: lvl => `+8 max bin (L${lvl})` },
   { id: 'meta_magnet', name: 'Magnet Coil', icon: '🧲', base: 40, max: 8,
     desc: lvl => `+4% pickup radius (L${lvl})` },
-  { id: 'meta_frame', name: 'Reinforced Frame', icon: '🛡️', base: 50, max: 3,
-    desc: lvl => `+1 shield charge per run (L${lvl})` },
   { id: 'meta_ap', name: 'Auto-Pilot Sensor', icon: '🤖', base: 100, max: 1,
-    desc: () => 'Unlocks offline dust collection' },
+    desc: () => 'Unlocks offline shard collection' },
   { id: 'meta_polish', name: 'Shard Polisher', icon: '✨', base: 60, max: 10,
     desc: lvl => `+3% shard gains (L${lvl})` },
   { id: 'meta_gold', name: 'Lucky Bristles', icon: '🍀', base: 200, max: 5,
-    desc: lvl => `+5% golden dust chance (L${lvl})` },
-  { id: 'meta_heads', name: 'Starting Heads', icon: '❤️', base: 150, max: 1,
-    desc: () => '+1 starting life' },
-  { id: 'meta_clean', name: 'Pre-Cleaned Rooms', icon: '🧹', base: 250, max: 5,
-    desc: lvl => `Hazard density -10% (L${lvl})` },
+    desc: lvl => `+3% golden dust chance (L${lvl})` },
+  { id: 'meta_dirt', name: 'Dust Dampener', icon: '🧯', base: 50, max: 8,
+    desc: lvl => `Dirt spawns 4% slower (L${lvl})` },
+  { id: 'meta_cap', name: 'Buried? No.', icon: '🛡️', base: 150, max: 5,
+    desc: lvl => `+12 dirt cap (L${lvl})` },
 ];
 
 // Build the run stats object (what upgrades mutate) from meta levels.
 export function makeRunStats(meta) {
   const L = id => meta[id] || 0;
   const s = {
-    // core
-    suction: 1.0, suctionRange: 3.2, pickupRadius: 1.6,
+    suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7,
     speed: BALANCE.bot.speed, turnRate: BALANCE.bot.turnRate,
     magnetRange: 0.0,
-    batteryMax: BALANCE.battery.max, drainMult: 1.0,
     binMax: BALANCE.bin.max,
-    lives: BALANCE.lives, maxLives: BALANCE.lives,
-    boostCdMult: 1.0, shardMult: 1.0,
-    chargerVents: 0,
-    hazmatValueMult: 1.0, hazmatSafe: false,
-    goldChance: 0.01,
-    shieldCharges: 0,
+    boostCdMult: 1.0,
+    shardMult: 1.0,
+    goldChance: BALANCE.dirt.goldChance,
+    spawnMult: 1.0,
+    dirtCap: BALANCE.dirt.cap,
     // run accumulators (not from upgrades)
-    dust: 0, bin: 0, shardsEarned: 0,
+    dust: 0, bin: 0, level: 1, xp: 0, shardsEarned: 0,
   };
-  // apply meta (multiplicative, capped)
   s.suction *= Math.min(3, 1 + 0.05 * L('meta_suction'));
   s.speed *= 1 + 0.04 * L('meta_speed');
-  s.batteryMax *= 1 + 0.06 * L('meta_battery');
+  s.binMax += 8 * L('meta_bin');
   s.pickupRadius *= 1 + 0.04 * L('meta_magnet');
-  s.shieldCharges = L('meta_frame');
   s.shardMult *= 1 + 0.03 * L('meta_polish');
-  s.goldChance += 0.05 * L('meta_gold');
-  s.lives += L('meta_heads');
-  s.maxLives = s.lives;
+  s.goldChance += 0.03 * L('meta_gold');
+  s.spawnMult *= Math.max(0.4, 1 - 0.04 * L('meta_dirt'));
+  s.dirtCap += 12 * L('meta_cap');
   return s;
 }
 
 export function runLevels(s) {
-  // returns map of run-upgrade id -> level (tracked by game)
   return s._runLevels || (s._runLevels = {});
 }
 
@@ -120,8 +115,7 @@ export function rollPicks(s, count = 3) {
   const lvls = runLevels(s);
   const pool = [];
   for (const u of RUN_UPGRADES) {
-    const cur = lvls[u.id] || 0;
-    if (cur >= u.max) continue;
+    if ((lvls[u.id] || 0) >= u.max) continue;
     for (let i = 0; i < u.weight; i++) pool.push(u);
   }
   const picks = [];
@@ -145,6 +139,20 @@ export function applyPick(s, id) {
   lvls[u.id] = cur + 1;
   u.apply(s, lvls[u.id]);
   return true;
+}
+
+export function xpNeed(s) { return BALANCE.xp.curve(s.level); }
+
+export function gainXp(s, n) {
+  s.xp += n;
+  let leveled = 0;
+  while (s.level < BALANCE.xp.maxLevel && s.xp >= xpNeed(s)) {
+    s.xp -= xpNeed(s);
+    s.level++;
+    leveled++;
+  }
+  if (s.level >= BALANCE.xp.maxLevel) s.xp = 0;
+  return leveled;
 }
 
 export function metaCost(id, lvl) {

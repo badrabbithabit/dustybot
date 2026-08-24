@@ -1,14 +1,14 @@
 // main.js — bootstrap: save/load, offline calc, main loop, UI wiring.
 import { World } from './world.js';
 import { Game } from './game.js';
-import { BALANCE, META_UPGRADES } from './upgrades.js';
+import { BALANCE } from './upgrades.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
 
-const SAVE_KEY = 'dustybot_save_v1';
+const SAVE_KEY = 'dustybot_save_v2';
 
 function loadSave() {
-  let s = { shards: 0, meta: {}, lastSeen: Date.now(), bestRoom: 0, runs: 0, bestDust: 0, offlineRate: 0.8 };
+  let s = { shards: 0, meta: {}, lastSeen: Date.now(), bestTime: 0, runs: 0, bestShards: 0 };
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
@@ -23,15 +23,15 @@ function writeSave(save) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ }
 }
 
-// ---- offline dust collection ----
+// ---- offline shard collection (requires Auto-Pilot meta) ----
 function computeOffline(save) {
   const now = Date.now();
   const dt = now - (save.lastSeen || now);
-  if (dt < 60_000) return 0; // under a minute: ignore
-  if (!save.meta.meta_ap) return 0; // need Auto-Pilot unlocked
+  if (dt < 60_000) return 0;
+  if (!save.meta.meta_ap) return 0;
   const capMs = BALANCE.offline.capHours * 3600_000;
   const t = Math.min(dt, capMs);
-  const rate = (save.offlineRate || BALANCE.offline.basePerHour);
+  const rate = BALANCE.offline.basePerHour * (1 + BALANCE.offline.metaPerHour * ((save.meta.meta_polish) || 0));
   return Math.floor(rate * (t / 3600_000));
 }
 
@@ -39,7 +39,6 @@ const canvas = document.getElementById('game');
 const world = new World(canvas);
 const save = loadSave();
 
-// apply offline gain up front
 const offlineGain = computeOffline(save);
 if (offlineGain > 0) {
   save.shards += offlineGain;
@@ -69,7 +68,6 @@ boostBtn.addEventListener('touchend', e => { e.preventDefault(); setBoost(false)
 boostBtn.addEventListener('mousedown', () => setBoost(true));
 addEventListener('mouseup', () => setBoost(false));
 
-// initial screen
 game.toMenu();
 
 // ---- main loop ----
@@ -78,7 +76,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
-  world.render();
+  world.render(dt, game);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

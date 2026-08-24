@@ -13,6 +13,7 @@ export function showAll(hideList, showId) {
 let toastTimer = null;
 export function toast(msg, kind = '') {
   const el = $('toast');
+  if (!el) return;
   el.textContent = msg;
   el.className = kind;
   el.classList.remove('hidden');
@@ -20,32 +21,35 @@ export function toast(msg, kind = '') {
   toastTimer = setTimeout(() => el.classList.add('hidden'), 2200);
 }
 
-export function setHud(state) {
-  const { lives, maxLives, roomNo, dust, battery, batteryMax, bin, binMax } = state;
-  $('lives').textContent = '❤'.repeat(Math.max(0, lives)) + '🛡'.repeat(state.shield || 0);
-  $('room-label').textContent = `Room ${roomNo}`;
-  $('dust-count').textContent = Math.floor(dust);
-  const bFrac = Math.max(0, battery / batteryMax);
-  const bf = $('battery-fill');
-  bf.style.width = (bFrac * 100) + '%';
-  bf.style.background = bFrac > 0.5 ? 'var(--ok)' : bFrac > 0.25 ? 'var(--gold)' : 'var(--danger)';
-  $('battery-pct').textContent = Math.round(bFrac * 100);
-  $('bin-fill').style.width = Math.min(100, bin / binMax * 100) + '%';
-  if (state.progress != null) {
-    $('room-progress-fill').style.width = Math.min(100, state.progress * 100) + '%';
-  }
+export function setHud(s) {
+  $('dust-count').textContent = Math.floor(s.dust);
+  const dirtFrac = s.dirtFrac;
+  const df = $('dirt-fill');
+  df.style.width = (dirtFrac * 100) + '%';
+  df.style.background = dirtFrac > 0.75 ? 'var(--danger)' : dirtFrac > 0.5 ? 'var(--gold)' : 'var(--accent)';
+  $('dirt-label').textContent = `${s.dirt}/${s.dirtCap} dirt`;
+  $('level-badge').textContent = `LV ${s.level}`;
+  const xf = $('xp-fill');
+  xf.style.width = Math.min(100, s.xp / s.xpNeed * 100) + '%';
+  $('bin-fill').style.width = Math.min(100, s.bin / s.binMax * 100) + '%';
+  const t = Math.floor(s.time);
+  $('time-label').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+function fmtTime(t) {
+  t = Math.floor(t);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
 export function setMenu(state) {
   $('menu-shards').textContent = state.shards;
-  $('best-room').textContent = `best room: ${state.bestRoom}`;
-  $('stats-line').textContent = `runs: ${state.runs} · best dust: ${state.bestDust}`;
+  $('best-line').textContent = `best: ${fmtTime(state.bestTime)} · ${state.runs} runs`;
+  const el = $('offline-toast');
   if (state.offline) {
-    const el = $('offline-toast');
-    el.textContent = `While you were away, your bot collected ${state.offline} dust shards.`;
+    el.textContent = `While you were away, Auto-Pilot collected ${state.offline} shards.`;
     el.classList.remove('hidden');
   } else {
-    $('offline-toast').classList.add('hidden');
+    el.classList.add('hidden');
   }
 }
 
@@ -96,10 +100,10 @@ export function buildPicks(picks, stats, onPick) {
 }
 
 export function setOver(state) {
-  $('over-title').textContent = state.won ? 'RUN COMPLETE' : 'RUN OVER';
+  $('over-title').textContent = 'BURIED';
   $('over-stats').innerHTML =
-    `reached <b>Room ${state.roomNo}</b><br>` +
-    `dust collected: <b>${Math.floor(state.dust)}</b><br>` +
-    `best room: <b>${state.bestRoom}</b>`;
+    `reached level <b>${state.level}</b><br>` +
+    `survived <b>${fmtTime(state.time)}</b><br>` +
+    `dust collected: <b>${Math.floor(state.dust)}</b>`;
   $('over-shards').textContent = `+${state.shardsGained} ✦ banked`;
 }

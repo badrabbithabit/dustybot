@@ -26,16 +26,30 @@ html, body {
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5;
   padding: calc(env(safe-area-inset-top) + 8px) 10px 0; }
 #hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-#room-progress {
-  margin: 8px 4px 0; height: 6px; border-radius: 4px; background: #ffffff14;
+#dirt-bar {
+  margin: 8px 4px 4px; height: 10px; border-radius: 6px; background: #ffffff14;
   overflow: hidden; border: 1px solid #ffffff10;
 }
-#room-progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent2), var(--ok)); transition: width .2s; }
+#dirt-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--danger)); transition: width .15s; }
+#xp-bar {
+  margin: 0 4px 4px; height: 5px; border-radius: 4px; background: #ffffff10;
+  overflow: hidden;
+}
+#xp-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent2), #9ecbff); transition: width .2s; }
 .hud-left, .hud-mid, .hud-right { display: flex; flex-direction: column; gap: 4px; }
 .hud-mid { align-items: center; }
 .hud-right { align-items: flex-end; }
-#lives { font-size: 20px; letter-spacing: 2px; text-shadow: 0 1px 4px #000; }
-#room-label { font-size: 12px; color: var(--dim); font-weight: 700; letter-spacing: 1px; }
+#level-badge { font-size: 18px; font-weight: 900; letter-spacing: 1px; color: var(--accent2); text-shadow: 0 1px 4px #000; }
+#time-label { font-size: 12px; color: var(--dim); font-weight: 700; letter-spacing: 1px; }
+#dirt-wrap {
+  position: relative; width: 92px; height: 18px; background: #0008;
+  border: 2px solid #ffffff22; border-radius: 6px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: #fff;
+}
+#dirt-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+  background: var(--accent); transition: width .15s, background .3s; }
+#dirt-wrap span { position: relative; z-index: 1; }
 #dust-count { font-size: 30px; font-weight: 800; line-height: 1; text-shadow: 0 2px 8px #000; }
 #dust-sub { font-size: 11px; color: var(--dim); font-weight: 700; }
 #battery-wrap, #bin-wrap {

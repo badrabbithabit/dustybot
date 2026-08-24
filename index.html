@@ -9,7 +9,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./css/style.css">
-<title>Dusty Bot — 3D Vacuum Roguelike</title>
+<title>Dusty Bot — 2D Vacuum Roguelike</title>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -18,19 +18,20 @@
 <div id="hud" class="hidden">
   <div id="hud-top">
     <div class="hud-left">
-      <div id="lives"></div>
-      <div id="room-label">Room 1</div>
+      <div id="level-badge">LV 1</div>
+      <div id="time-label">0:00</div>
     </div>
     <div class="hud-mid">
       <div id="dust-count">0</div>
       <div id="dust-sub">dust</div>
     </div>
     <div class="hud-right">
-      <div id="battery-wrap"><div id="battery-fill"></div><span id="battery-pct">100</span></div>
+      <div id="dirt-wrap" title="Dirt on floor — don't let it max out"><div id="dirt-fill"></div><span id="dirt-label">0/150 dirt</span></div>
       <div id="bin-wrap" title="Dust bin"><div id="bin-fill"></div><span>bin</span></div>
     </div>
   </div>
-  <div id="room-progress"><div id="room-progress-fill"></div></div>
+  <div id="dirt-bar"><div id="dirt-bar-fill"></div></div>
+  <div id="xp-bar"><div id="xp-fill"></div></div>
   <button id="btn-boost" class="touch-btn">BOOST</button>
   <button id="btn-mute" class="corner-btn" style="top:env(safe-area-inset-top)">♪</button>
 </div>
@@ -38,16 +39,15 @@
 <!-- Joystick -->
 <div id="joy" class="hidden"><div id="joy-base"></div><div id="joy-knob"></div></div>
 
-<!-- Menu / Hangar -->
+<!-- Menu -->
 <div id="screen-menu" class="screen">
-  <h1>DUSTY BOT</h3>
-  <p class="tag">a 3d vacuum roguelike</p>
+  <h1>DUSTY BOT</h1>
+  <p class="tag">a 2d vacuum roguelike</p>
   <div id="shard-bank"><span id="menu-shards">0</span> shards</div>
   <button id="btn-start" class="big">START RUN</button>
   <button id="btn-hangar" class="big small">HANGAR (upgrades)</button>
   <div id="offline-toast" class="hidden"></div>
-  <div id="best-room" class="best">best room: 0</div>
-  <div id="stats-line" class="best"></div>
+  <div id="best-line" class="best">best: 0:00 · 0 runs</div>
 </div>
 
 <!-- Hangar / meta shop -->
@@ -58,16 +58,16 @@
   <button id="btn-back-menu" class="big small">back</button>
 </div>
 
-<!-- Upgrade pick -->
+<!-- Upgrade pick (level up) -->
 <div id="screen-pick" class="screen hidden">
-  <h2 id="pick-title">ROOM CLEARED</h2>
+  <h2 id="pick-title">LEVEL UP</h2>
   <p class="tag">pick an upgrade</p>
   <div id="pick-list"></div>
 </div>
 
 <!-- Run over -->
 <div id="screen-over" class="screen hidden">
-  <h2 id="over-title">RUN OVER</h2>
+  <h2 id="over-title">BURIED</h2>
   <div id="over-stats" class="best"></div>
   <div id="over-shards" class="shards-gain"></div>
   <button id="btn-retry" class="big">RETRY</button>
