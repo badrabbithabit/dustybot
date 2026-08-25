@@ -1,8 +1,16 @@
 // dust.js — dirt motes (pooled, plain objects), continuous ramping spawn,
 // suction + pickup. Tracks the global dirt count; game reads count vs cap.
 import { BALANCE } from './upgrades.js';
+import { PAL } from './palette.js';
 
 const MAX_DUST = 700;
+
+const MOTE_STYLE = {
+  dust:   { col: PAL.dirt1,  hi: PAL.dustShine, r: 0.30 },
+  big:    { col: PAL.dirt2,  hi: PAL.dustShine, r: 0.50 },
+  debris: { col: PAL.debris, hi: PAL.dirt2,     r: 0.36 },
+  gold:   { col: PAL.gold,   hi: PAL.goldHi,    r: 0.42 },
+};
 
 export class DustSystem {
   constructor(world) {
@@ -37,7 +45,7 @@ export class DustSystem {
     it.y = (y != null) ? y : Math.random() * this.world.H;
     it.vx = 0; it.vy = 0;
     it.type = t.type; it.val = t.val;
-    it.r = t.type === 'big' ? 0.5 : t.type === 'gold' ? 0.42 : 0.3;
+    it.r = MOTE_STYLE[t.type].r;
     it.phase = Math.random() * 6.28;
     this.items.push(it);
     return it;
@@ -97,17 +105,23 @@ export class DustSystem {
   draw(c) {
     for (const it of this.items) {
       const p = this.world.toScreen(it.x, it.y);
+      const st = MOTE_STYLE[it.type] || MOTE_STYLE.dust;
       const r = it.r * this.world.scale;
+      const s = Math.max(3, r * 1.9);
       const bob = Math.sin(it.phase) * 0.15 * r;
-      c.fillStyle =
-        it.type === 'gold' ? '#ffd54a' :
-        it.type === 'debris' ? '#8a6a4a' :
-        it.type === 'big' ? '#b09468' : '#c9b28a';
-      c.beginPath(); c.arc(p.x, p.y + bob, r, 0, Math.PI * 2); c.fill();
-      if (it.type === 'gold') {
-        c.fillStyle = '#fff3b0';
-        c.beginPath(); c.arc(p.x - r * 0.25, p.y + bob - r * 0.25, r * 0.35, 0, Math.PI * 2); c.fill();
-      }
+      const x = Math.round(p.x - s / 2);
+      const y = Math.round(p.y + bob - s / 2);
+      // soft shadow
+      c.fillStyle = PAL.shadow;
+      c.fillRect(x + 1, Math.round(p.y + s / 2), s - 2, Math.max(2, s * 0.2));
+      // pixel mote: square + darker bottom/right + highlight
+      c.fillStyle = st.col;
+      c.fillRect(x, y, s, s);
+      c.fillStyle = 'rgba(0,0,0,0.28)';
+      c.fillRect(x, y + s - Math.ceil(s / 3), s, Math.ceil(s / 3));
+      c.fillRect(x + s - Math.ceil(s / 3), y, Math.ceil(s / 3), s);
+      c.fillStyle = st.hi;
+      c.fillRect(x, y, Math.ceil(s / 3), Math.ceil(s / 3));
     }
   }
 }

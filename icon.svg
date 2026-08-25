@@ -1,8 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#0d1117"/>
-  <circle cx="64" cy="64" r="42" fill="#d14a28"/>
-  <circle cx="64" cy="64" r="42" fill="none" stroke="#ff8a66" stroke-width="5"/>
-  <circle cx="64" cy="64" r="16" fill="#2b120b"/>
-  <circle cx="64" cy="64" r="7" fill="#4ac3ff"/>
-  <rect x="20" y="88" width="88" height="10" rx="5" fill="#ffd54a" opacity=".85"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- 16x16 pixel robot vacuum, sunset synth palette -->
+  <rect width="16" height="16" fill="#0b1020"/>
+  <rect x="4" y="14" width="8" height="1" fill="#263454"/>
+  <!-- shadow -->
+  <rect x="4" y="12" width="8" height="2" fill="#04070f" opacity="0.6"/>
+  <!-- body 10x10 -->
+  <rect x="3" y="2" width="10" height="10" fill="#ff6b57"/>
+  <!-- dark outline bottom/right -->
+  <rect x="3" y="11" width="10" height="1" fill="#c23c2c"/>
+  <rect x="12" y="2" width="1" height="10" fill="#c23c2c"/>
+  <!-- light top/left -->
+  <rect x="3" y="2" width="10" height="1" fill="#ffab8f"/>
+  <rect x="3" y="2" width="1" height="10" fill="#ffab8f"/>
+  <rect x="4" y="3" width="8" height="1" fill="#ffab8f" opacity="0.6"/>
+  <!-- dome -->
+  <rect x="5" y="4" width="6" height="4" fill="#151d31"/>
+  <rect x="5" y="4" width="6" height="1" fill="#263454"/>
+  <!-- LED -->
+  <rect x="7" y="5" width="2" height="2" fill="#4dffa6"/>
+  <rect x="7" y="5" width="1" height="1" fill="#d6ffe9"/>
+  <!-- glint -->
+  <rect x="4" y="9" width="2" height="1" fill="#ffab8f"/>
+  <!-- dust motes -->
+  <rect x="1" y="4" width="1" height="1" fill="#c9a878"/>
+  <rect x="14" y="7" width="1" height="1" fill="#c9a878"/>
+  <rect x="13" y="2" width="1" height="1" fill="#ffcf5c"/>
 </svg>

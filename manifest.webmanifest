@@ -1,11 +1,11 @@
 {
   "name": "Dusty Bot",
   "short_name": "DustyBot",
-  "description": "3D roguelike robot vacuum simulator",
+  "description": "2D pixel-art roguelike robot vacuum",
   "start_url": "./",
   "display": "fullscreen",
   "orientation": "portrait",
-  "background_color": "#0d1117",
-  "theme_color": "#0d1117",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
   "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
 }

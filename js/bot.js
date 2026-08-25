@@ -1,6 +1,42 @@
 // bot.js — the robot vacuum, top-down 2D sprite + movement. No health/battery;
 // it has a dust bin (clogs when full) and a boost with cooldown.
 import { BALANCE } from './upgrades.js';
+import { PAL } from './palette.js';
+
+// 11x11 pixel sprite: '.'=transparent, K=dark outline, R=coral body, H=coral
+// hi (front), W=white glint, C=dome, B=blue LED, M=magenta LED (bin full).
+const SPRITE = [
+  '....KKK....',
+  '...KHHHK...',
+  '..KHRRRRK..',
+  '..KRRRRRK..',
+  '.KRRCCRRK..',
+  '.KRCCCcRRK.',
+  '..KRRRRRK..',
+  '..KRRRRRK..',
+  '..KRRRRRK..',
+  '...KHHHK...',
+  '....KKK....',
+];
+const SPRITE_PX = 11;
+
+function makeSprite(led) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = SPRITE_PX;
+  const c = cv.getContext('2d');
+  const map = { K: PAL.accentOut, R: PAL.accent, H: PAL.accentHi, W: '#ffffff', C: PAL.wall, B: PAL.blue, M: PAL.danger };
+  for (let y = 0; y < SPRITE_PX; y++) {
+    for (let x = 0; x < SPRITE_PX; x++) {
+      let ch = SPRITE[y][x];
+      if (ch === 'c') ch = led; // center LED cell
+      const col = map[ch];
+      if (!col || ch === '.') continue;
+      c.fillStyle = col;
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+  return cv;
+}
 
 export class Bot {
   constructor(world, stats) {
@@ -18,6 +54,9 @@ export class Bot {
     this.alive = true;
     this._brush = 0;
     this.onBoost = null;
+    this._sprOk = makeSprite('B');
+    this._sprFull = makeSprite('M');
+    this._shadow = null;
   }
 
   addDust(n, xp) {
@@ -79,27 +118,27 @@ export class Bot {
   draw(c) {
     const p = this.world.toScreen(this.x, this.y);
     const r = BALANCE.bot.radius * this.world.scale;
+    const size = r * 2.3;
+    // pixel blob shadow
+    c.fillStyle = PAL.shadow;
+    const sh = r * 1.7;
+    c.fillRect(p.x - sh / 2, p.y + r * 0.45, sh, sh * 0.55);
+    c.fillRect(p.x - sh * 0.3, p.y + r * 0.45 + sh * 0.55, sh * 0.6, sh * 0.25);
     c.save();
     c.translate(p.x, p.y);
     c.rotate(this.heading);
-    // body
-    c.fillStyle = '#d14a28';
-    c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
-    // front accent
-    c.fillStyle = '#ff8a66';
-    c.beginPath(); c.arc(0, 0, r * 0.92, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55); c.lineTo(0, 0); c.closePath(); c.fill();
-    // side brushes (spin)
-    c.strokeStyle = '#ffd54a'; c.lineWidth = Math.max(1.5, r * 0.08);
+    // side brushes (spin, chunky)
+    c.strokeStyle = PAL.gold;
+    c.lineWidth = Math.max(2, r * 0.12);
+    c.lineCap = 'round';
     for (let i = 0; i < 2; i++) {
       const a = this._brush + i * Math.PI;
       c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a) * r * 1.05, Math.sin(a) * r * 1.05); c.stroke();
     }
-    // top sensor
-    c.fillStyle = '#1c2735';
-    c.beginPath(); c.arc(0, -r * 0.25, r * 0.34, 0, Math.PI * 2); c.fill();
-    // LED (green ok / red bin full)
-    c.fillStyle = this.full ? '#ff4a6a' : '#4aff9e';
-    c.beginPath(); c.arc(0, -r * 0.25, r * 0.16, 0, Math.PI * 2); c.fill();
+    c.lineCap = 'butt';
+    // body sprite (nearest-neighbor scaled)
+    c.imageSmoothingEnabled = false;
+    c.drawImage(this.full ? this._sprFull : this._sprOk, -size / 2, -size / 2, size, size);
     c.restore();
   }
 }
