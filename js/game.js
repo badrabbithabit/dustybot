@@ -104,7 +104,7 @@ export class Game {
     const dock = BALANCE.dock;
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
-      const v =       const v = this.bot.dumpBin();
+      const v = this.bot.dumpBin();
       Audio.sfx.dump();
       const leveled = gainXp(this.stats, this.bot._dumpXp * dock.dumpXpPerMote);
       this.bot._dumpXp = 0;
