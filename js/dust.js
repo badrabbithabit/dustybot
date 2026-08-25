@@ -87,11 +87,11 @@ export class DustSystem {
   }
 
   _collected(it, bot, stats, cb) {
-    bot.addDust(1);
+    bot.addDust(1, it._xp);
     const gained = it.val;
     if (it.type === 'gold') cb.onGold && cb.onGold();
     else cb.onSuck && cb.onSuck(it.type);
-    cb.onCollect && cb.onCollect(gained);
+    cb.onCollect && cb.onCollect(gained, it);
   }
 
   draw(c) {

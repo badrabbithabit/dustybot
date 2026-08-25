@@ -78,7 +78,7 @@ export class Game {
     this.dust.update(dt, this.bot, this.stats, {
       onSuck: () => Audio.sfx.suck(),
       onGold: () => Audio.sfx.gold(),
-      onCollect: v => this._onCollect(v),
+      onCollect: (v, it) => this._onCollect(v, it),
     });
 
     // continuous dirt spawn (regenerates)
@@ -104,10 +104,16 @@ export class Game {
     const dock = BALANCE.dock;
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
-      const v = this.bot.dumpBin();
+      const v =       const v = this.bot.dumpBin();
       Audio.sfx.dump();
-      gainXp(this.stats, v * dock.dumpXpPerMote);
-      UI.toast(`Bin dumped — ${v} motes → XP`, 'good');
+      const leveled = gainXp(this.stats, this.bot._dumpXp * dock.dumpXpPerMote);
+      this.bot._dumpXp = 0;
+      UI.toast(`Bin dumped — ${v} motes`, 'good');
+      if (leveled > 0) {
+        Audio.sfx.clear();
+        this._bankShards(BALANCE.shardPerLevel * leveled);
+        this._showPick();
+      }
     }
 
     // HUD
@@ -122,14 +128,12 @@ export class Game {
     if (btn) btn.classList.toggle('cooling', this.bot.boostCd > 0);
   }
 
-  _onCollect(val) {
-    const leveled = gainXp(this.stats, val);
+  _onCollect(val, it) {
+    // dust count = motes vacuumed (bin contents)
+    this.stats.dust += 1;
+    // XP only when the bin is DUMPED at the dock (val is stashed for then)
+    if (it) it._xp = val;
     this._bankShards(val * BALANCE.shardPerDust * this.stats.shardMult);
-    if (leveled > 0) {
-      Audio.sfx.clear();
-      this._bankShards(BALANCE.shardPerLevel * leveled);
-      this._showPick();
-    }
   }
 
   _bankShards(n) {
@@ -143,13 +147,15 @@ export class Game {
   }
 
   _showPick() {
-    // non-blocking: run keeps running, panel sits top-right (never covers joystick)
+    // gameplay pauses while picking
+    this.state = 'pick';
     document.getElementById('pick-title').textContent = `LEVEL ${this.stats.level}`;
     const picks = rollPicks(this.stats);
     UI.buildPicks(picks, this.stats, id => {
       Audio.sfx.upgrade();
       applyPick(this.stats, id);
       UI.hide('pick-panel');
+      this.state = 'run';
     });
     UI.show('pick-panel');
   }

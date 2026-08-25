@@ -11,6 +11,7 @@ export class Bot {
     this.heading = 0;
     this.vx = 0; this.vy = 0;
     this.bin = 0;
+    this._dumpXp = 0;
     this.full = false;
     this.boostCd = 0;
     this.boosting = false;
@@ -19,8 +20,9 @@ export class Bot {
     this.onBoost = null;
   }
 
-  addDust(n) {
+  addDust(n, xp) {
     this.bin = Math.min(this.stats.binMax, this.bin + n);
+    this._dumpXp = (this._dumpXp || 0) + (xp || 0);
     this.full = this.bin >= BALANCE.bin.fullAt;
   }
   dumpBin() {

@@ -156,7 +156,7 @@ h2 { font-size: 26px; margin: 0 0 -4px; letter-spacing: 2px; }
 /* ---------- Pick cards (compact panel, top-right; never covers joystick) ---------- */
 #pick-panel {
   position: fixed; top: calc(env(safe-area-inset-top) + 56px); right: 10px;
-  z-index: 12; width: min(300px, 86vw); max-height: 52vh;
+  z-index: 15; width: min(300px, 86vw); max-height: 52vh;
   display: flex; flex-direction: column; gap: 8px; padding: 10px;
   background: linear-gradient(180deg, #0d1117f2, #101826f7);
   border: 1px solid #ffffff1f; border-radius: var(--radius);
