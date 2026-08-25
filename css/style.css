@@ -153,19 +153,29 @@ h2 { font-size: 26px; margin: 0 0 -4px; letter-spacing: 2px; }
 .meta-buy.can { background: linear-gradient(180deg, #3fae72, #227a4c); color: #fff; }
 .meta-buy.max { opacity: .5; }
 
-/* ---------- Pick cards ---------- */
-#pick-list { display: flex; flex-direction: column; gap: 10px; width: min(360px, 90vw); }
+/* ---------- Pick cards (compact panel, top-right; never covers joystick) ---------- */
+#pick-panel {
+  position: fixed; top: calc(env(safe-area-inset-top) + 56px); right: 10px;
+  z-index: 12; width: min(300px, 86vw); max-height: 52vh;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: linear-gradient(180deg, #0d1117f2, #101826f7);
+  border: 1px solid #ffffff1f; border-radius: var(--radius);
+  box-shadow: 0 10px 30px #000a;
+}
+#pick-title { margin: 0 0 2px; font-size: 15px; letter-spacing: 1px; color: var(--accent2); text-align: left; }
+#pick-sub { margin: 0 0 4px; font-size: 11px; color: var(--dim); text-align: left; }
+#pick-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .pick-card {
   pointer-events: auto; width: 100%; text-align: left; cursor: pointer;
-  background: var(--panel); border: 2px solid #ffffff1a; border-radius: 14px;
-  padding: 14px; display: flex; gap: 12px; align-items: center;
+  background: #161b22; border: 2px solid #ffffff1a; border-radius: 12px;
+  padding: 10px; display: flex; gap: 10px; align-items: center;
 }
 .pick-card:active { transform: scale(.97); border-color: var(--accent2); }
-.pick-icon { font-size: 28px; width: 44px; height: 44px; border-radius: 12px;
+.pick-icon { font-size: 22px; width: 36px; height: 36px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; background: #ffffff10; flex: none; }
-.pick-name { font-weight: 800; font-size: 15px; }
-.pick-lvl { color: var(--accent2); font-size: 12px; font-weight: 700; }
-.pick-desc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+.pick-name { font-weight: 800; font-size: 13px; }
+.pick-lvl { color: var(--accent2); font-size: 11px; font-weight: 700; }
+.pick-desc { color: var(--dim); font-size: 11px; margin-top: 1px; }
 
 /* ---------- Toast ---------- */
 #toast {

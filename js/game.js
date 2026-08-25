@@ -7,7 +7,7 @@ import { Controls } from './controls.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
 
-const SCREENS = ['screen-menu', 'screen-hangar', 'screen-pick', 'screen-over'];
+const SCREENS = ['screen-menu', 'screen-hangar', 'screen-over'];
 
 export class Game {
   constructor(world, save) {
@@ -143,18 +143,15 @@ export class Game {
   }
 
   _showPick() {
-    this.state = 'pick';
-    UI.showAll(SCREENS, 'screen-pick');
-    UI.hide('hud'); UI.hide('joy');
+    // non-blocking: run keeps running, panel sits top-right (never covers joystick)
     document.getElementById('pick-title').textContent = `LEVEL ${this.stats.level}`;
     const picks = rollPicks(this.stats);
     UI.buildPicks(picks, this.stats, id => {
       Audio.sfx.upgrade();
       applyPick(this.stats, id);
-      this.state = 'run';
-      UI.showAll(SCREENS, null);
-      UI.show('hud'); UI.show('joy');
+      UI.hide('pick-panel');
     });
+    UI.show('pick-panel');
   }
 
   endRun() {

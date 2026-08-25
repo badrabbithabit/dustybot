@@ -60,8 +60,11 @@ export class Controls {
         const len = Math.hypot(dx, dy);
         if (len > max) { dx = dx / len * max; dy = dy / len * max; }
         this._knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-        this.joy.x = dx / max;
-        this.joy.y = dy / max;   // +y = finger up; game maps to -z (forward/away)
+        // snap to 8 compass directions (screen-aligned: up = away from you)
+        const raw = Math.atan2(dy, dx);
+        const a = Math.round(raw / (Math.PI / 4)) * (Math.PI / 4);
+        this.joy.x = Math.cos(a);
+        this.joy.y = Math.sin(a);   // screen dir, +y = finger up
         this.joy.active = true;
         this.tapTarget = null;
         this.onJoyChange && this.onJoyChange(this.joy.x, this.joy.y);
