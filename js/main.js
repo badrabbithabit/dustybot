@@ -7,6 +7,21 @@ import * as Audio from './audio.js';
 
 const SAVE_KEY = 'dustybot_save_v2';
 
+// Visible on-page error trap (mobile-friendly, no DevTools needed).
+function __showErr(label, e) {
+  let el = document.getElementById('__err');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '__err';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7a1020;color:#fff;font:12px monospace;padding:8px;border:2px solid #ff4d6d;white-space:pre-wrap;max-height:45vh;overflow:auto';
+    document.body.appendChild(el);
+  }
+  const line = `[${label}] ${e && e.name ? e.name : 'Error'}: ${e && e.message ? e.message : e}\n${e && e.stack ? e.stack.split('\n').slice(0, 6).join('\n') : ''}`;
+  el.textContent = (el.textContent ? el.textContent + '\n\n' : '') + line;
+}
+addEventListener('error', ev => __showErr('window.onerror', ev.error || ev.message));
+addEventListener('unhandledrejection', ev => __showErr('unhandledrejection', ev.reason));
+
 function loadSave() {
   let s = { shards: 0, meta: {}, lastSeen: Date.now(), bestTime: 0, runs: 0, bestShards: 0 };
   try {
@@ -51,7 +66,10 @@ writeSave(save);
 
 // ---- UI wiring ----
 const $ = id => document.getElementById(id);
-$('btn-start').onclick = () => { Audio.resumeAudio(); Audio.sfx.click(); game.newRun(); };
+$('btn-start').onclick = () => {
+  try { Audio.resumeAudio(); Audio.sfx.click(); game.newRun(); }
+  catch (e) { __showErr('btn-start', e); throw e; }
+};
 $('btn-hangar').onclick = () => { Audio.sfx.click(); game.showHangar(); };
 $('btn-back-menu').onclick = () => { Audio.sfx.click(); game.toMenu(); };
 $('btn-retry').onclick = () => { Audio.sfx.click(); game.newRun(); };
