@@ -20,19 +20,19 @@ export class World {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.dpr = Math.min(2, (window.devicePixelRatio || 1));
-    this._resize();
-    addEventListener('resize', () => this._resize());
 
+    // Set all state BEFORE the first _resize()/_buildFloor() so a theme is
+    // always present when the floor is pre-rendered.
     this.W = BALANCE.arena.w;   // world width
     this.H = BALANCE.arena.h;   // world height
     this.scale = 1;             // world units -> css px
     this.ox = 0; this.oy = 0;   // world origin in css px (top-left)
-    this._computeFit();
-
     this.theme = { ...DEFAULT_THEME };
     this.obstacles = [];
     this._floorCv = null;
-    this._buildFloor();
+
+    this._resize();            // safe now: this.theme + this.W/H exist
+    addEventListener('resize', () => this._resize());
   }
 
   // Load a level: swap in its theme + obstacle layout, rebuild the floor.
@@ -92,7 +92,7 @@ export class World {
     cv.width = cv.height = css;
     const c = cv.getContext('2d');
     const ts = this.scale * TILE;
-    const th = this.theme;
+    const th = this.theme || DEFAULT_THEME; // never throw if theme missing
 
     // checkerboard tiles
     const nx = Math.ceil(this.W / TILE), ny = Math.ceil(this.H / TILE);
