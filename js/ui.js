@@ -37,12 +37,13 @@ export function setHud(s) {
   $('time-label').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
-// Level intro banner (shows the theme + "clear all the dirt" objective).
+// Level intro banner (shows the room name + theme + "clear all the dirt").
 export function showLevelIntro(def, level) {
   const el = $('level-intro');
   if (!el) return;
-  $('intro-theme').textContent = `${def.theme.icon} ${def.theme.name}`;
-  $('intro-sub').textContent = `${def.theme.sub} · level ${level}`;
+  const room = def.roomName || def.theme.name;
+  $('intro-theme').textContent = `${def.theme.icon} ${room}`;
+  $('intro-sub').textContent = `${def.theme.name}${def.roomSub ? ' · ' + def.roomSub : ''} · level ${level}`;
   $('intro-obj').textContent = `Clear all ${def.dirtCount} motes of dirt`;
   el.classList.add('show');
 }

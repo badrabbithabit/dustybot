@@ -205,46 +205,50 @@ export const THEMES = {
 export const THEME_ORDER = ['residential', 'office', 'store', 'space'];
 
 // ---------------------------------------------------------------------------
-// Obstacle layouts. Each theme has 3 layouts; each layout is a list of AABB
-// obstacles {x, y, w, h, kind}. World is 44x44 (BALANCE.arena). Coordinates are
+// Room layouts. Each theme has 3 NAMED rooms; each room is a list of AABB
+// obstacles {x, y, w, h, kind}. World is 44x44 (BALANCE.arena), coordinates in
 // world units. `kind` drives the per-theme render style (furniture/desk/etc).
-// The dock lives at BALANCE.dock; layouts keep the top strip (y < ~8) and the
-// bot spawn (center) clear.
+// HARD RULES for every room (the bot always spawns at the arena center):
+//   * keep the top dock strip clear (y < ~9)
+//   * keep a 4x4 clear pad around center (22,22) — x 20..24 AND y 20..24 must
+//     be free, so the bot never spawns inside furniture
+//   * keep at least a 2-wide corridor between obstacles for the bot to pass
 // ---------------------------------------------------------------------------
 const L = (x, y, w, h, kind) => ({ x, y, w, h, kind });
 
+// { name, sub, obstacles } per room. `name` is shown in the level-intro banner.
 export const LAYOUTS = {
   residential: [
-    // 1 — living room: sofa + coffee table + media unit
-    [ L(6, 26, 14, 5, 'sofa'), L(10, 20, 6, 4, 'table'), L(30, 6, 10, 5, 'media'), L(32, 30, 5, 5, 'plant') ],
-    // 2 — bedroom: bed + dresser + wardrobe
-    [ L(6, 10, 12, 12, 'bed'), L(28, 8, 10, 5, 'dresser'), L(28, 30, 8, 6, 'wardrobe') ],
-    // 3 — kitchen/dining: island + counters + table
-    [ L(14, 24, 14, 5, 'island'), L(4, 8, 8, 4, 'counter'), L(30, 28, 10, 5, 'table') ],
+    { name: 'Living Room', sub: 'sofa & media wall',
+      obstacles: [ L(6, 27, 13, 5, 'sofa'), L(8, 30, 6, 4, 'table'), L(29, 8, 11, 5, 'media'), L(33, 31, 5, 5, 'plant') ] },
+    { name: 'Bedroom', sub: 'bed & wardrobe',
+      obstacles: [ L(6, 11, 12, 11, 'bed'), L(29, 9, 10, 5, 'dresser'), L(29, 31, 8, 6, 'wardrobe') ] },
+    { name: 'Kitchen', sub: 'island & counters',
+      obstacles: [ L(4, 28, 9, 5, 'counter'), L(31, 28, 9, 5, 'counter'), L(14, 32, 16, 4, 'island'), L(30, 8, 10, 4, 'counter') ] },
   ],
   office: [
-    // 1 — open office: desk banks + divider
-    [ L(8, 12, 10, 4, 'desk'), L(26, 12, 10, 4, 'desk'), L(8, 28, 10, 4, 'desk'), L(26, 28, 10, 4, 'desk'), L(20, 18, 4, 8, 'divider') ],
-    // 2 — conference: big table + cabinets
-    [ L(14, 18, 16, 8, 'table'), L(4, 30, 8, 5, 'cabinet'), L(32, 8, 8, 5, 'cabinet') ],
-    // 3 — cubicle farm: grid of stalls
-    [ L(8, 12, 6, 6, 'cubicle'), L(19, 12, 6, 6, 'cubicle'), L(30, 12, 6, 6, 'cubicle'), L(8, 26, 6, 6, 'cubicle'), L(19, 26, 6, 6, 'cubicle'), L(30, 26, 6, 6, 'cubicle') ],
+    { name: 'Open Office', sub: 'desk banks',
+      obstacles: [ L(8, 11, 10, 4, 'desk'), L(26, 11, 10, 4, 'desk'), L(8, 29, 10, 4, 'desk'), L(26, 29, 10, 4, 'desk'), L(6, 20, 4, 6, 'divider') ] },
+    { name: 'Conference', sub: 'big table',
+      obstacles: [ L(14, 28, 16, 7, 'table'), L(4, 12, 8, 5, 'cabinet'), L(32, 12, 8, 5, 'cabinet'), L(4, 30, 6, 6, 'cabinet') ] },
+    { name: 'Cubicle Farm', sub: 'stall grid',
+      obstacles: [ L(7, 12, 7, 6, 'cubicle'), L(30, 12, 7, 6, 'cubicle'), L(7, 26, 7, 6, 'cubicle'), L(30, 26, 7, 6, 'cubicle') ] },
   ],
   store: [
-    // 1 — retail: shelf aisles
-    [ L(6, 14, 5, 14, 'shelf'), L(19, 14, 5, 14, 'shelf'), L(32, 14, 5, 14, 'shelf') ],
-    // 2 — checkout: counter + queue rails + stock
-    [ L(14, 12, 16, 4, 'counter'), L(14, 26, 8, 6, 'stock'), L(28, 28, 8, 6, 'stock') ],
-    // 3 — warehouse: pallet stacks
-    [ L(6, 12, 8, 8, 'pallet'), L(18, 12, 8, 8, 'pallet'), L(30, 12, 8, 8, 'pallet'), L(6, 28, 8, 8, 'pallet'), L(30, 28, 8, 8, 'pallet') ],
+    { name: 'Retail Floor', sub: 'shelf aisles',
+      obstacles: [ L(6, 14, 5, 12, 'shelf'), L(33, 14, 5, 12, 'shelf'), L(6, 30, 5, 8, 'shelf'), L(33, 30, 5, 8, 'shelf') ] },
+    { name: 'Checkout', sub: 'counter & stock',
+      obstacles: [ L(6, 12, 10, 4, 'counter'), L(28, 12, 10, 4, 'counter'), L(10, 29, 8, 6, 'stock'), L(26, 29, 8, 6, 'stock') ] },
+    { name: 'Warehouse', sub: 'pallet stacks',
+      obstacles: [ L(6, 12, 8, 7, 'pallet'), L(30, 12, 8, 7, 'pallet'), L(6, 29, 8, 7, 'pallet'), L(30, 29, 8, 7, 'pallet') ] },
   ],
   space: [
-    // 1 — deck: consoles + hatch
-    [ L(8, 14, 10, 5, 'console'), L(26, 14, 10, 5, 'console'), L(18, 28, 8, 6, 'hatch') ],
-    // 2 — lab: benches + core
-    [ L(6, 16, 8, 6, 'bench'), L(30, 16, 8, 6, 'bench'), L(19, 24, 6, 8, 'core') ],
-    // 3 — bridge: control banks
-    [ L(10, 12, 8, 6, 'console'), L(26, 12, 8, 6, 'console'), L(16, 28, 12, 5, 'console') ],
+    { name: 'Engineering Deck', sub: 'consoles & hatch',
+      obstacles: [ L(8, 14, 10, 5, 'console'), L(26, 14, 10, 5, 'console'), L(18, 30, 8, 6, 'hatch') ] },
+    { name: 'Research Lab', sub: 'benches & core',
+      obstacles: [ L(6, 16, 8, 6, 'bench'), L(30, 16, 8, 6, 'bench'), L(19, 30, 6, 7, 'core') ] },
+    { name: 'Command Bridge', sub: 'control banks',
+      obstacles: [ L(9, 12, 8, 6, 'console'), L(27, 12, 8, 6, 'console'), L(16, 30, 12, 5, 'console') ] },
   ],
 };
 
@@ -253,10 +257,11 @@ export function levelDef(level) {
   const pos = level - 1;                            // 0-based level index
   const rot = Math.floor(pos / (3 * 4));            // full 4-theme rotations
   const themeKey = THEME_ORDER[Math.floor(pos / 3) % 4]; // which theme
-  const slot = pos % 3;                             // which of the 3 layouts
+  const slot = pos % 3;                             // which of the 3 rooms
   const theme = THEMES[themeKey];
-  const obstacles = (LAYOUTS[themeKey][slot] || []).map(o => ({ ...o }));
+  const room = LAYOUTS[themeKey][slot] || { name: theme.name, sub: '', obstacles: [] };
+  const obstacles = (room.obstacles || []).map(o => ({ ...o }));
   const dirtCount = Math.min(BALANCE.dirt.max,
     BALANCE.dirt.base + rot * BALANCE.dirt.perRotation);
-  return { level, themeKey, theme, slot, rot, obstacles, dirtCount };
+  return { level, themeKey, theme, slot, rot, roomName: room.name, roomSub: room.sub, obstacles, dirtCount };
 }
