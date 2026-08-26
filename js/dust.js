@@ -1,32 +1,34 @@
-// dust.js — dirt motes (pooled, plain objects), continuous ramping spawn,
-// suction + pickup. Tracks the global dirt count; game reads count vs cap.
+// dust.js — dirt motes (pooled, plain objects). A FIXED set is scattered at the
+// start of each level (it does NOT regenerate). Motes are themed to the current
+// level's environment. Suction + pickup are unchanged.
 import { BALANCE } from './upgrades.js';
 import { PAL } from './palette.js';
 
-const MAX_DUST = 700;
+const MAX_DUST = 400;
 
-const MOTE_STYLE = {
-  dust:   { col: PAL.dirt1,  hi: PAL.dustShine, r: 0.30 },
-  big:    { col: PAL.dirt2,  hi: PAL.dustShine, r: 0.50 },
-  debris: { col: PAL.debris, hi: PAL.dirt2,     r: 0.36 },
-  gold:   { col: PAL.gold,   hi: PAL.goldHi,    r: 0.42 },
-};
+// Per-mote-type radius; colors come from the active theme (see draw).
+const MOTE_R = { dust: 0.30, big: 0.50, debris: 0.36, gold: 0.42 };
 
 export class DustSystem {
   constructor(world) {
     this.world = world;
     this.items = [];
     this._free = [];
-    this._spawnAcc = 0;
+    this.theme = null;        // theme object for coloring (set by spawnLevel)
   }
 
   get count() { return this.items.length; }
 
-  reset(startCount) {
+  // Scatter `count` themed motes at open (non-obstacle, non-dock) floor spots.
+  spawnLevel(count, theme) {
+    this.reset();
+    this.theme = theme;
+    for (let i = 0; i < count; i++) this._spawnOne();
+  }
+
+  reset() {
     for (const it of this.items) { this._free.push(it); }
     this.items = [];
-    this._spawnAcc = 0;
-    for (let i = 0; i < startCount; i++) this.spawn();
   }
 
   _rollType(stats) {
@@ -37,15 +39,24 @@ export class DustSystem {
     return { type: 'dust', val: BALANCE.dirt.moteValue };
   }
 
-  spawn(x, y) {
+  _spawnOne() {
     if (this.items.length >= MAX_DUST) return null;
     const it = this._free.pop() || {};
     const t = this._rollType(this._stats || { goldChance: BALANCE.dirt.goldChance });
-    it.x = (x != null) ? x : Math.random() * this.world.W;
-    it.y = (y != null) ? y : Math.random() * this.world.H;
+    // find an open spot: in-bounds, not on an obstacle, not on the dock
+    let x, y, tries = 0;
+    do {
+      x = 1.5 + Math.random() * (this.world.W - 3);
+      y = 9 + Math.random() * (this.world.H - 10.5); // keep the top dock strip clear
+      tries++;
+    } while (tries < 40 && (
+      this.world.blocked(x, y, 0.6) ||
+      Math.hypot(x - BALANCE.dock.x, y - BALANCE.dock.y) < 3.2
+    ));
+    it.x = x; it.y = y;
     it.vx = 0; it.vy = 0;
     it.type = t.type; it.val = t.val;
-    it.r = MOTE_STYLE[t.type].r;
+    it.r = MOTE_R[t.type];
     it.phase = Math.random() * 6.28;
     this.items.push(it);
     return it;
@@ -102,10 +113,22 @@ export class DustSystem {
     cb.onCollect && cb.onCollect(gained, it);
   }
 
+  // Theme-aware mote colors.
+  _colors(type) {
+    const d = (this.theme && this.theme.dirt) || PAL;
+    const map = {
+      dust:   { col: d.dust,   hi: d.shine, },
+      big:    { col: d.big,    hi: d.shine, },
+      debris: { col: d.debris, hi: d.big,   },
+      gold:   { col: d.gold,   hi: d.shine, },
+    };
+    return map[type] || map.dust;
+  }
+
   draw(c) {
     for (const it of this.items) {
       const p = this.world.toScreen(it.x, it.y);
-      const st = MOTE_STYLE[it.type] || MOTE_STYLE.dust;
+      const st = this._colors(it.type);
       const r = it.r * this.world.scale;
       const s = Math.max(3, r * 1.9);
       const bob = Math.sin(it.phase) * 0.15 * r;

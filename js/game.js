@@ -1,6 +1,9 @@
-// game.js — run state machine: menu -> run (endless) -> pick (level-up) -> over.
-// Dirt pressure rises with elapsed time; death when global dirt hits the cap.
-import { BALANCE, makeRunStats, rollPicks, applyPick, gainXp, xpNeed } from './upgrades.js';
+// game.js — run state machine. A run is a sequence of themed LEVELS
+// (residential -> office -> store -> space, looping with a per-rotation ramp).
+// Each level: fixed obstacles + a FIXED set of themed dirt scattered at start
+// (no regen). Clear a level by vacuuming every mote. NO failure mode.
+// XP from dumping the bin at the dock drives bot level-ups + upgrade picks.
+import { BALANCE, makeRunStats, rollPicks, applyPick, gainXp, xpNeed, levelDef, metaCost as metaCostLocal } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
 import { Controls } from './controls.js';
@@ -18,8 +21,13 @@ export class Game {
     this.state = 'menu';
     this.bot = null;
     this.stats = null;
-    this.time = 0;
-    this._warned = false;
+    this.level = 1;
+    this.time = 0;            // total run time
+    this._frac = 0;
+    this._fullWarned = false;
+    this._introTimer = 0;
+    this._clearedTimer = 0;
+    this._levelDirtTotal = 0;
 
     this.controls.onTap = (sx, sy) => {
       if (this.state !== 'run') return null;
@@ -33,33 +41,57 @@ export class Game {
   newRun() {
     this.stats = makeRunStats(this.save.meta);
     this.time = 0;
+    this.level = 1;
     this._frac = 0;
-    this._warned = false;
     this._fullWarned = false;
-    this.dust.reset(BALANCE.dirt.start);
-    if (this.bot) this.bot = null;
     this.bot = new Bot(this.world, this.stats);
     this.bot.onBoost = () => {
       Audio.sfx.boost();
       this.bot.boostCd = BALANCE.bot.boostCd * this.stats.boostCdMult;
       this.bot.boostCd = Math.max(BALANCE.bot.boostCdFloor, this.bot.boostCd);
     };
-    this.state = 'run';
     UI.showAll(SCREENS, null);
     UI.show('hud');
     UI.show('joy');
+    this.loadLevel(1);
   }
 
-  // dirt pressure ramps with level (and a little with time)
-  _spawnRate() {
-    const r = Math.min(BALANCE.dirt.spawnMax,
-      BALANCE.dirt.spawnBase +
-      BALANCE.dirt.levelRamp * this.stats.level +
-      BALANCE.dirt.spawnRamp * this.time);
-    return r * this.stats.spawnMult;
+  // Set up level `n`: theme + obstacles on the world, bot at a clear spawn,
+  // then scatter the fixed themed dirt. Input is frozen during the intro banner.
+  loadLevel(n) {
+    this.level = n;
+    const def = levelDef(n);
+    this.world.setLevel(def.theme, def.obstacles);
+
+    // bot at a clear spot (every layout keeps the arena center free)
+    this.bot.x = this.world.W / 2;
+    this.bot.y = this.world.H / 2;
+    this.bot.vx = 0; this.bot.vy = 0;
+    this.bot.heading = -Math.PI / 2; // face up, toward the dock
+
+    // scatter the level's fixed themed dirt (does not regenerate)
+    this._levelDirtTotal = def.dirtCount;
+    this.dust.spawnLevel(def.dirtCount, def.theme);
+
+    this.state = 'intro';
+    this._introTimer = 1.6;
+    UI.showLevelIntro(def, n);
   }
 
   update(dt) {
+    if (this.state === 'intro') {
+      this._introTimer -= dt;
+      if (this._introTimer <= 0) {
+        UI.hideLevelIntro();
+        this.state = 'run';
+      }
+      return;
+    }
+    if (this.state === 'cleared') {
+      this._clearedTimer -= dt;
+      if (this._clearedTimer <= 0) this.loadLevel(this.level + 1);
+      return;
+    }
     if (this.state !== 'run' || !this.bot) return;
     this.time += dt;
 
@@ -81,26 +113,15 @@ export class Game {
       onCollect: (v, it) => this._onCollect(v, it),
     });
 
-    // continuous dirt spawn (regenerates)
-    this.dust._spawnAcc += this._spawnRate() * dt;
-    while (this.dust._spawnAcc >= 1) { this.dust._spawnAcc -= 1; this.dust.spawn(); }
-
-    // passive shard trickle
-    this._bankShards(BALANCE.shardPerSecond * this.stats.shardMult * dt);
-
-    // dirt death check
-    const frac = this.dust.count / this.stats.dirtCap;
+    // bin-full nudge (bin still caps suction; there is no dirt-death)
     if (this.bot.full && !this._fullWarned) {
       this._fullWarned = true;
       UI.toast('Bin full — no vacuum! Drive to the dock', 'warn');
     } else if (!this.bot.full) {
       this._fullWarned = false;
     }
-    if (frac >= 0.75 && !this._warned) { this._warned = true; Audio.sfx.hurt(); UI.toast('Dirt overload!', 'warn'); }
-    if (frac < 0.6) this._warned = false;
-    if (this.dust.count >= this.stats.dirtCap) { this.endRun(); return; }
 
-    // dock: empty bin for XP
+    // dock: empty bin for XP (may level the bot up -> upgrade pick)
     const dock = BALANCE.dock;
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
@@ -113,14 +134,22 @@ export class Game {
         Audio.sfx.clear();
         this._bankShards(BALANCE.shardPerLevel * leveled);
         this._showPick();
+        return; // paused while picking
       }
     }
+
+    // passive shard trickle
+    this._bankShards(BALANCE.shardPerSecond * this.stats.shardMult * dt);
+
+    // level clears when every mote is vacuumed up
+    if (this.dust.count <= 0) { this._levelClear(); return; }
 
     // HUD
     UI.setHud({
       dust: this.stats.dust,
-      dirt: this.dust.count, dirtCap: this.stats.dirtCap, dirtFrac: Math.min(1, frac),
-      level: this.stats.level, xp: this.stats.xp, xpNeed: xpNeed(this.stats),
+      dirt: this.dust.count, dirtTotal: this._levelDirtTotal,
+      level: this.level, themeIcon: levelDef(this.level).theme.icon,
+      botLevel: this.stats.level, xp: this.stats.xp, xpNeed: xpNeed(this.stats),
       bin: this.bot.bin, binMax: this.stats.binMax,
       time: this.time,
     });
@@ -129,11 +158,17 @@ export class Game {
   }
 
   _onCollect(val, it) {
-    // dust count = motes vacuumed (bin contents)
     this.stats.dust += 1;
-    // XP only when the bin is DUMPED at the dock (val is stashed for then)
     if (it) it._xp = val;
     this._bankShards(val * BALANCE.shardPerDust * this.stats.shardMult);
+  }
+
+  _levelClear() {
+    Audio.sfx.clear();
+    UI.toast(`Level ${this.level} clear!`, 'good');
+    this._bankShards(BALANCE.shardPerLevel);
+    this.state = 'cleared';
+    this._clearedTimer = 1.1;
   }
 
   _bankShards(n) {
@@ -149,7 +184,7 @@ export class Game {
   _showPick() {
     // gameplay pauses while picking
     this.state = 'pick';
-    document.getElementById('pick-title').textContent = `LEVEL ${this.stats.level}`;
+    document.getElementById('pick-title').textContent = `BOT LEVEL ${this.stats.level}`;
     const picks = rollPicks(this.stats);
     UI.buildPicks(picks, this.stats, id => {
       Audio.sfx.upgrade();
@@ -160,31 +195,12 @@ export class Game {
     UI.show('pick-panel');
   }
 
-  endRun() {
-    if (this.state === 'over') return;
-    this.state = 'over';
-    Audio.sfx.over();
-    this.save.runs++;
-    this.save.lastSeen = Date.now();
-    this.onSave && this.onSave();
-    UI.hide('hud'); UI.hide('joy');
-    UI.showAll(SCREENS, 'screen-over');
-    UI.setOver({
-      level: this.stats.level,
-      dust: this.stats.dust,
-      time: this.time,
-      bestTime: Math.max(this.save.bestTime || 0, this.time),
-      shardsGained: this.stats.shardsEarned,
-    });
-    if (this.time > (this.save.bestTime || 0)) this.save.bestTime = Math.floor(this.time);
-    if (this.stats.shardsEarned > (this.save.bestShards || 0)) this.save.bestShards = this.stats.shardsEarned;
-  }
-
   toMenu() {
     this.state = 'menu';
     this.save.lastSeen = Date.now();
     this.onSave && this.onSave();
     UI.hide('hud'); UI.hide('joy');
+    UI.hideLevelIntro();
     UI.showAll(SCREENS, 'screen-menu');
     UI.setMenu({
       shards: this.save.shards,
@@ -211,7 +227,4 @@ export class Game {
     UI.showAll(SCREENS, 'screen-hangar');
     UI.buildHangar(this.save, buy);
   }
-
 }
-
-import { metaCost as metaCostLocal } from './upgrades.js';

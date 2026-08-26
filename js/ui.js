@@ -23,17 +23,32 @@ export function toast(msg, kind = '') {
 
 export function setHud(s) {
   $('dust-count').textContent = Math.floor(s.dust);
-  const dirtFrac = s.dirtFrac;
+  // remaining-dirt meter: starts full, empties as you clean
+  const frac = s.dirtTotal > 0 ? s.dirt / s.dirtTotal : 0;
   const df = $('dirt-fill');
-  df.style.width = (dirtFrac * 100) + '%';
-  df.style.background = dirtFrac > 0.75 ? 'var(--danger)' : dirtFrac > 0.5 ? 'var(--gold)' : 'var(--accent)';
-  $('dirt-label').textContent = `${s.dirt}/${s.dirtCap} dirt`;
-  $('level-badge').textContent = `LV ${s.level}`;
+  df.style.width = (frac * 100) + '%';
+  df.style.background = frac < 0.33 ? 'var(--gold)' : 'var(--accent)';
+  $('dirt-label').textContent = `${s.dirt} left`;
+  $('level-badge').textContent = `${s.themeIcon || ''} ${s.level}`;
   const xf = $('xp-fill');
   xf.style.width = Math.min(100, s.xp / s.xpNeed * 100) + '%';
   $('bin-fill').style.width = Math.min(100, s.bin / s.binMax * 100) + '%';
   const t = Math.floor(s.time);
   $('time-label').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+// Level intro banner (shows the theme + "clear all the dirt" objective).
+export function showLevelIntro(def, level) {
+  const el = $('level-intro');
+  if (!el) return;
+  $('intro-theme').textContent = `${def.theme.icon} ${def.theme.name}`;
+  $('intro-sub').textContent = `${def.theme.sub} · level ${level}`;
+  $('intro-obj').textContent = `Clear all ${def.dirtCount} motes of dirt`;
+  el.classList.add('show');
+}
+export function hideLevelIntro() {
+  const el = $('level-intro');
+  if (el) el.classList.remove('show');
 }
 
 function fmtTime(t) {

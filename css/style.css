@@ -50,13 +50,19 @@ html, body {
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5;
   padding: calc(env(safe-area-inset-top) + 8px) 10px 0; }
 #hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-#dirt-bar {
-  margin: 8px 4px 4px; height: 14px; background: #00000066;
-  overflow: hidden; border: 3px solid var(--line);
+/* Level intro banner — brief, centered, non-blocking */
+#level-intro {
+  position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.92);
+  z-index: 6; text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity .25s, transform .25s;
 }
-#dirt-bar-fill { height: 100%; width: 0%;
-  background: repeating-linear-gradient(90deg, var(--accent) 0 8px, var(--accent-hi) 8px 12px);
-  transition: width .15s, background .3s; }
+#level-intro.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#intro-theme { font-size: 34px; font-weight: 400; letter-spacing: 2px; color: #fff;
+  text-shadow: 3px 3px 0 var(--accent), 6px 6px 0 #00000088; }
+#intro-sub { font-size: 13px; letter-spacing: 2px; color: var(--blue-hi); margin-top: 6px;
+  text-shadow: 1px 1px 0 #000; }
+#intro-obj { font-size: 15px; letter-spacing: 1px; color: var(--gold-hi); margin-top: 14px;
+  text-shadow: 1px 1px 0 #000; }
 #xp-bar {
   margin: 0 4px 4px; height: 8px; background: #00000055;
   overflow: hidden; border: 2px solid var(--line);

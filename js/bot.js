@@ -64,6 +64,31 @@ export class Bot {
     this._dumpXp = (this._dumpXp || 0) + (xp || 0);
     this.full = this.bin >= BALANCE.bin.fullAt;
   }
+
+  // Advance one axis, stopping at the first collision (bounds or obstacle) so
+  // the bot slides along faces instead of cornering into them.
+  _moveAxis(axis, delta) {
+    if (delta === 0) return;
+    const R = BALANCE.bot.radius;
+    const dir = Math.sign(delta);
+    let remaining = Math.abs(delta);
+    let moved = 0;
+    while (remaining > 1e-4) {
+      const step = Math.min(0.1, remaining);
+      const nx = axis === 'x' ? this.x + dir * step : this.x;
+      const ny = axis === 'y' ? this.y + dir * step : this.y;
+      if (this.world.isFree(nx, ny, R)) {
+        if (axis === 'x') this.x = nx; else this.y = ny;
+        remaining -= step; moved += step;
+      } else {
+        break; // hit a wall or obstacle face -> stop sliding this axis
+      }
+    }
+    if (moved < Math.abs(delta)) {
+      // we were blocked; kill velocity into the surface
+      if (axis === 'x') this.vx = 0; else this.vy = 0;
+    }
+  }
   dumpBin() {
     if (this.bin <= 0) return null;
     const v = this.bin;
@@ -103,13 +128,9 @@ export class Bot {
     const mag = Math.min(1, Math.hypot(ix, iy));
     this.vx = Math.sin(this.heading) * speed * mag;
     this.vy = -Math.cos(this.heading) * speed * mag;   // heading 0 = up on screen
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
-
-    // wall clamp
-    const R = BALANCE.bot.radius;
-    this.x = Math.max(R, Math.min(this.world.W - R, this.x));
-    this.y = Math.max(R, Math.min(this.world.H - R, this.y));
+    // integrate with obstacle collision (slide along faces)
+    this._moveAxis('x', this.vx * dt);
+    this._moveAxis('y', this.vy * dt);
 
     this._brush += dt * (mag > 0 ? (this.boosting ? 30 : 14) : 2);
     return { moving: mag > 0.1, speed };
