@@ -127,15 +127,29 @@ export class Bot {
     c.save();
     c.translate(p.x, p.y);
     c.rotate(this.heading);
-    // side brushes (spin, chunky)
-    c.strokeStyle = PAL.gold;
-    c.lineWidth = Math.max(2, r * 0.12);
-    c.lineCap = 'round';
-    for (let i = 0; i < 2; i++) {
-      const a = this._brush + i * Math.PI;
-      c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a) * r * 1.05, Math.sin(a) * r * 1.05); c.stroke();
+    // front spinning brush (heading 0 = forward = -Y); count 0/1/2, grows per level
+    const bl = this.stats.brushLevel || 0;
+    if (bl > 0) {
+      const count = bl === 1 ? 1 : 2;
+      const reach = r * (1.0 + 0.12 * bl);
+      const br = r * 0.42;
+      c.strokeStyle = PAL.gold;
+      c.lineWidth = Math.max(2, r * 0.10);
+      c.lineCap = 'round';
+      for (let i = 0; i < count; i++) {
+        const off = i === 0 ? -0.72 : 0.72;
+        const cx = Math.sin(off) * reach;
+        const cy = -Math.cos(off) * reach;
+        c.beginPath();
+        for (let k = 0; k < 3; k++) {
+          const a = this._brush + k * (Math.PI * 2 / 3);
+          c.moveTo(cx, cy);
+          c.lineTo(cx + Math.cos(a) * br, cy + Math.sin(a) * br);
+        }
+        c.stroke();
+      }
+      c.lineCap = 'butt';
     }
-    c.lineCap = 'butt';
     // body sprite (nearest-neighbor scaled)
     c.imageSmoothingEnabled = false;
     c.drawImage(this.full ? this._sprFull : this._sprOk, -size / 2, -size / 2, size, size);

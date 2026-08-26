@@ -33,8 +33,8 @@ export const RUN_UPGRADES = [
     desc: lvl => `+20% suction & range, +5 bin (L${lvl})`,
     apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.5; s.binMax += 5; } },
   { id: 'brush', name: 'Turbo Brush', icon: '🪥', max: 5, weight: 3,
-    desc: lvl => `+15% pickup radius (L${lvl})`,
-    apply: (s, n) => { s.pickupRadius *= 1.15; } },
+    desc: lvl => lvl <= 1 ? `Adds a side brush (L1)` : `+20% pickup, brush grows (L${lvl})`,
+    apply: (s, n) => { s.brushLevel = n; if (n >= 2) s.pickupRadius *= 1.2; } },
   { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 3,
     desc: lvl => `+10% speed & turning (L${lvl})`,
     apply: (s, n) => { s.speed *= 1.10; s.turnRate *= 1.10; } },
@@ -87,7 +87,7 @@ export const META_UPGRADES = [
 export function makeRunStats(meta) {
   const L = id => meta[id] || 0;
   const s = {
-    suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7,
+    suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 0,
     speed: BALANCE.bot.speed, turnRate: BALANCE.bot.turnRate,
     magnetRange: 0.0,
     binMax: BALANCE.bin.max,
