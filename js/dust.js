@@ -72,17 +72,23 @@ export class DustSystem {
 
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
+      // corner-brush sweep (spins motes inward from all sides)
+      const sw = bot.brushLevel > 0 ? bot.brushSweep(it.x, it.y, dt, bot.brushLevel) : null;
+      if (sw) { it.vx += sw.x; it.vy += sw.y; }
       // drift
       it.x += it.vx * dt; it.y += it.vy * dt;
       if (it.x < 0) { it.x = 0; it.vx *= -0.5; }
       if (it.y < 0) { it.y = 0; it.vy *= -0.5; }
       if (it.x > W) { it.x = W; it.vx *= -0.5; }
       if (it.y > H) { it.y = H; it.vy *= -0.5; }
-      // suction
+      // suction: omnidirectional circle around the bot, like a real robot vac —
+      // no directional cone. Strongest near the body, fading to zero at range.
       const dx = bot.x - it.x, dy = bot.y - it.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < suckR + pickupR) {
-        const force = (1 - dist / (suckR + pickupR)) * 16 * stats.suction * clogMult;
+      if (dist < pickupR + 1) {
+        const reach = pickupR + 1;
+        const f = 1 - dist / reach;
+        const force = f * f * 34 * stats.suction * clogMult;
         it.vx += dx / (dist + 0.001) * force * dt * 6;
         it.vy += dy / (dist + 0.001) * force * dt * 6;
       }

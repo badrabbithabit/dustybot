@@ -3,41 +3,6 @@
 import { BALANCE } from './upgrades.js';
 import { PAL } from './palette.js';
 
-// 11x11 pixel sprite: '.'=transparent, K=dark outline, R=coral body, H=coral
-// hi (front), W=white glint, C=dome, B=blue LED, M=magenta LED (bin full).
-const SPRITE = [
-  '....KKK....',
-  '...KHHHK...',
-  '..KHRRRRK..',
-  '..KRRRRRK..',
-  '.KRRCCRRK..',
-  '.KRCCCcRRK.',
-  '..KRRRRRK..',
-  '..KRRRRRK..',
-  '..KRRRRRK..',
-  '...KHHHK...',
-  '....KKK....',
-];
-const SPRITE_PX = 11;
-
-function makeSprite(led) {
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = SPRITE_PX;
-  const c = cv.getContext('2d');
-  const map = { K: PAL.accentOut, R: PAL.accent, H: PAL.accentHi, W: '#ffffff', C: PAL.wall, B: PAL.blue, M: PAL.danger };
-  for (let y = 0; y < SPRITE_PX; y++) {
-    for (let x = 0; x < SPRITE_PX; x++) {
-      let ch = SPRITE[y][x];
-      if (ch === 'c') ch = led; // center LED cell
-      const col = map[ch];
-      if (!col || ch === '.') continue;
-      c.fillStyle = col;
-      c.fillRect(x, y, 1, 1);
-    }
-  }
-  return cv;
-}
-
 export class Bot {
   constructor(world, stats) {
     this.world = world;
@@ -54,8 +19,6 @@ export class Bot {
     this.alive = true;
     this._brush = 0;
     this.onBoost = null;
-    this._sprOk = makeSprite('B');
-    this._sprFull = makeSprite('M');
     this._shadow = null;
   }
 
@@ -132,19 +95,38 @@ export class Bot {
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
 
-    this._brush += dt * (mag > 0 ? (this.boosting ? 30 : 14) : 2);
+    // spin: negative = counter-clockwise, the "right" way for a vac's brush
+    // (sweeps dust IN toward the body instead of flinging it off)
+    const spin = mag > 0 ? (this.boosting ? 30 : 14) : 2;
+    this._brush -= dt * spin;
     return { moving: mag > 0.1, speed };
+  }
+
+  // Corner-brush sweep: motes within `reach` of the body (all around, since the
+  // vac is a circle) get a tangential push that spirals them inward, like a
+  // Roomba's side brush flinging dirt toward the center roller. Returns the
+  // impulse (vx, vy) for a mote at (mx, my); zero if outside reach.
+  brushSweep(mx, my, dt, bl) {
+    const dx = mx - this.x, dy = my - this.y;
+    const dist = Math.hypot(dx, dy);
+    const reach = BALANCE.bot.radius * (1.6 + 0.12 * (bl || 0));
+    if (dist > reach || dist < 0.25) return null;
+    const t = dist / reach;                       // 0 at body -> 1 at reach edge
+    const nx = dx / dist, ny = dy / dist;         // outward
+    const sp = (1 - t * t) * 5.5 * dt;            // stronger closer to the body
+    // tangential (perpendicular, counter-clockwise to match brush spin) + inward
+    const tvx = -ny, tvy = nx;
+    return { x: (tvx - nx * 0.7) * sp, y: (tvy - ny * 0.7) * sp };
   }
 
   draw(c) {
     const p = this.world.toScreen(this.x, this.y);
-    const r = BALANCE.bot.radius * this.world.scale;
-    const size = r * 2.3;
-    // pixel blob shadow
+    const R = BALANCE.bot.radius * this.world.scale;
+    // round blob shadow (offset down, like the bot sits on the floor)
     c.fillStyle = PAL.shadow;
-    const sh = r * 1.7;
-    c.fillRect(p.x - sh / 2, p.y + r * 0.45, sh, sh * 0.55);
-    c.fillRect(p.x - sh * 0.3, p.y + r * 0.45 + sh * 0.55, sh * 0.6, sh * 0.25);
+    c.beginPath();
+    c.ellipse(p.x, p.y + R * 0.45, R * 1.05, R * 0.55, 0, 0, Math.PI * 2);
+    c.fill();
     c.save();
     c.translate(p.x, p.y);
     c.rotate(this.heading);
@@ -152,10 +134,10 @@ export class Bot {
     const bl = this.stats.brushLevel || 0;
     if (bl > 0) {
       const count = bl === 1 ? 1 : 2;
-      const reach = r * (1.0 + 0.12 * bl);
-      const br = r * 0.42;
+      const reach = R * (1.0 + 0.12 * bl);
+      const br = R * 0.42;
       c.strokeStyle = PAL.gold;
-      c.lineWidth = Math.max(2, r * 0.10);
+      c.lineWidth = Math.max(2, R * 0.10);
       c.lineCap = 'round';
       for (let i = 0; i < count; i++) {
         const off = i === 0 ? -0.72 : 0.72;
@@ -171,9 +153,41 @@ export class Bot {
       }
       c.lineCap = 'butt';
     }
-    // body sprite (nearest-neighbor scaled)
-    c.imageSmoothingEnabled = false;
-    c.drawImage(this.full ? this._sprFull : this._sprOk, -size / 2, -size / 2, size, size);
+    // ---- round body (roomba-style disc) ----
+    // outer dark rim
+    c.beginPath();
+    c.arc(0, 0, R, 0, Math.PI * 2);
+    c.fillStyle = PAL.accentOut;
+    c.fill();
+    // main coral body
+    c.beginPath();
+    c.arc(0, 0, R * 0.92, 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.accentDk : PAL.accent;
+    c.fill();
+    // front bumper: darker arc hugging the top (forward = -Y) edge
+    c.beginPath();
+    c.arc(0, 0, R * 0.92, Math.PI * 1.15, Math.PI * 1.85);
+    c.strokeStyle = PAL.accentOut;
+    c.lineWidth = Math.max(2, R * 0.14);
+    c.stroke();
+    // front dome (roomba "eye" bump) just inside the top edge
+    c.beginPath();
+    c.arc(0, -R * 0.5, R * 0.34, 0, Math.PI * 2);
+    c.fillStyle = PAL.wall;
+    c.fill();
+    c.strokeStyle = PAL.accentHi;
+    c.lineWidth = Math.max(1, R * 0.05);
+    c.stroke();
+    // status LED on the dome (blue = ok, red = full)
+    c.beginPath();
+    c.arc(0, -R * 0.5, Math.max(1.5, R * 0.10), 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.blue;
+    c.fill();
+    // top highlight glint (upper-left, gives the disc some roundness)
+    c.beginPath();
+    c.arc(-R * 0.25, -R * 0.1, R * 0.45, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,255,255,0.10)';
+    c.fill();
     c.restore();
   }
 }
