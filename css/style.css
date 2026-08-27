@@ -63,13 +63,6 @@ html, body {
   text-shadow: 1px 1px 0 #000; }
 #intro-obj { font-size: 15px; letter-spacing: 1px; color: var(--gold-hi); margin-top: 14px;
   text-shadow: 1px 1px 0 #000; }
-#xp-bar {
-  margin: 0 4px 4px; height: 8px; background: #00000055;
-  overflow: hidden; border: 2px solid var(--line);
-}
-#xp-fill { height: 100%; width: 0%;
-  background: repeating-linear-gradient(90deg, var(--blue) 0 8px, var(--blue-hi) 8px 12px);
-  transition: width .2s; }
 .hud-left, .hud-mid, .hud-right { display: flex; flex-direction: column; gap: 4px; }
 .hud-mid { align-items: center; }
 .hud-right { align-items: flex-end; }

@@ -3,10 +3,10 @@
 // 3 residential rooms -> 3 offices -> 3 stores -> 3 space decks, then it loops
 // through themes with a per-rotation difficulty ramp. Each level has fixed
 // obstacles (furniture/desks/shelves/consoles) and a FIXED amount of themed
-// dirt scattered at level start (it does NOT regenerate). Clear a level by
-// vacuuming every mote. No failure mode yet.
-// XP (from dumping the bin at the dock) still drives bot level-ups + picks;
-// shards are the persistent meta currency.
+// dirt scattered at level start (it does NOT regenerate); the count scales
+// with the level number. Clear a level by vacuuming every mote, then pick
+// 1 of 3 upgrades. No failure mode yet. Shards are the persistent meta
+// currency.
 
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
@@ -16,16 +16,16 @@ export const BALANCE = {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
     base: 26,                       // dirt count at level 1
-    perRotation: 8,                 // + dirt per full theme rotation (difficulty)
-    max: 130,
+    perLevel: 6,                    // + dirt per level (scales with level number)
+    perRotation: 12,                // + dirt per full theme rotation (extra ramp)
+    max: 160,
   },
-  xp: { curve: lvl => 12 + 6 * lvl, maxLevel: 30 },   // XP needed to go lvl -> lvl+1
   shardPerDust: 0.05,
   shardPerSecond: 0.05,             // passive shard trickle
   shardPerLevel: 2,
   metaCost: (base, lvl) => Math.round(base * Math.pow(1.6, lvl)),
   offline: { capHours: 8, basePerHour: 0.8, metaPerHour: 0.05 },
-  dock: { x: 22, y: 3.6, triggerR: 1.9, dumpXpPerMote: 1 },
+  dock: { x: 22, y: 3.6, triggerR: 1.9 },
 };
 
 // ---------------- In-run upgrades (1 of 3 picks on level-up) ----------------
@@ -95,7 +95,7 @@ export function makeRunStats(meta) {
     goldChance: BALANCE.dirt.goldChance,
     spawnMult: 1.0,
     // run accumulators (not from upgrades)
-    dust: 0, bin: 0, level: 1, xp: 0, shardsEarned: 0,
+    dust: 0, bin: 0, dirtCollected: 0, level: 1, shardsEarned: 0,
   };
   s.suction *= Math.min(3, 1 + 0.05 * L('meta_suction'));
   s.speed *= 1 + 0.04 * L('meta_speed');
@@ -139,20 +139,6 @@ export function applyPick(s, id) {
   lvls[u.id] = cur + 1;
   u.apply(s, lvls[u.id]);
   return true;
-}
-
-export function xpNeed(s) { return BALANCE.xp.curve(s.level); }
-
-export function gainXp(s, n) {
-  s.xp += n;
-  let leveled = 0;
-  while (s.level < BALANCE.xp.maxLevel && s.xp >= xpNeed(s)) {
-    s.xp -= xpNeed(s);
-    s.level++;
-    leveled++;
-  }
-  if (s.level >= BALANCE.xp.maxLevel) s.xp = 0;
-  return leveled;
 }
 
 export function metaCost(id, lvl) {
@@ -262,6 +248,6 @@ export function levelDef(level) {
   const room = LAYOUTS[themeKey][slot] || { name: theme.name, sub: '', obstacles: [] };
   const obstacles = (room.obstacles || []).map(o => ({ ...o }));
   const dirtCount = Math.min(BALANCE.dirt.max,
-    BALANCE.dirt.base + rot * BALANCE.dirt.perRotation);
+    BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation);
   return { level, themeKey, theme, slot, rot, roomName: room.name, roomSub: room.sub, obstacles, dirtCount };
 }

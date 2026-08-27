@@ -30,8 +30,6 @@ export function setHud(s) {
   df.style.background = frac < 0.33 ? 'var(--gold)' : 'var(--accent)';
   $('dirt-label').textContent = `${s.dirt} left`;
   $('level-badge').textContent = `${s.themeIcon || ''} ${s.level}`;
-  const xf = $('xp-fill');
-  xf.style.width = Math.min(100, s.xp / s.xpNeed * 100) + '%';
   $('bin-fill').style.width = Math.min(100, s.bin / s.binMax * 100) + '%';
   const t = Math.floor(s.time);
   $('time-label').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;

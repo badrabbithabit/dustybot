@@ -1,9 +1,9 @@
 // game.js — run state machine. A run is a sequence of themed LEVELS
 // (residential -> office -> store -> space, looping with a per-rotation ramp).
 // Each level: fixed obstacles + a FIXED set of themed dirt scattered at start
-// (no regen). Clear a level by vacuuming every mote. NO failure mode.
-// XP from dumping the bin at the dock drives bot level-ups + upgrade picks.
-import { BALANCE, makeRunStats, rollPicks, applyPick, gainXp, xpNeed, levelDef, metaCost as metaCostLocal } from './upgrades.js';
+// (no regen); the dirt count scales with the level number. Clear a level by
+// vacuuming every mote, then pick 1 of 3 upgrades. NO failure mode.
+import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
 import { Controls } from './controls.js';
@@ -26,7 +26,6 @@ export class Game {
     this._frac = 0;
     this._fullWarned = false;
     this._introTimer = 0;
-    this._clearedTimer = 0;
     this._levelDirtTotal = 0;
 
     this.controls.onTap = (sx, sy) => {
@@ -71,6 +70,7 @@ export class Game {
 
     // scatter the level's fixed themed dirt (does not regenerate)
     this._levelDirtTotal = def.dirtCount;
+    this.stats.dirtCollected = 0;
     this.dust.spawnLevel(def.dirtCount, def.theme);
 
     this.state = 'intro';
@@ -85,11 +85,6 @@ export class Game {
         UI.hideLevelIntro();
         this.state = 'run';
       }
-      return;
-    }
-    if (this.state === 'cleared') {
-      this._clearedTimer -= dt;
-      if (this._clearedTimer <= 0) this.loadLevel(this.level + 1);
       return;
     }
     if (this.state !== 'run' || !this.bot) return;
@@ -121,35 +116,30 @@ export class Game {
       this._fullWarned = false;
     }
 
-    // dock: empty bin for XP (may level the bot up -> upgrade pick)
+    // dock: empty the bin (keeps suction working; no XP)
     const dock = BALANCE.dock;
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
       const v = this.bot.dumpBin();
       Audio.sfx.dump();
-      const leveled = gainXp(this.stats, this.bot._dumpXp * dock.dumpXpPerMote);
       this.bot._dumpXp = 0;
       UI.toast(`Bin dumped — ${v} motes`, 'good');
-      if (leveled > 0) {
-        Audio.sfx.clear();
-        this._bankShards(BALANCE.shardPerLevel * leveled);
-        this._showPick();
-        return; // paused while picking
-      }
     }
 
     // passive shard trickle
     this._bankShards(BALANCE.shardPerSecond * this.stats.shardMult * dt);
 
-    // level clears when every mote is vacuumed up
-    if (this.dust.count <= 0) { this._levelClear(); return; }
+    // level clears when every mote has been COLLECTED (vacuumed into the bin)
+    if (this.stats.dirtCollected >= this._levelDirtTotal) {
+      this._levelClear();
+      return;
+    }
 
     // HUD
     UI.setHud({
       dust: this.stats.dust,
       dirt: this.dust.count, dirtTotal: this._levelDirtTotal,
       level: this.level, themeIcon: levelDef(this.level).theme.icon,
-      botLevel: this.stats.level, xp: this.stats.xp, xpNeed: xpNeed(this.stats),
       bin: this.bot.bin, binMax: this.stats.binMax,
       time: this.time,
     });
@@ -159,7 +149,7 @@ export class Game {
 
   _onCollect(val, it) {
     this.stats.dust += 1;
-    if (it) it._xp = val;
+    this.stats.dirtCollected += 1;
     this._bankShards(val * BALANCE.shardPerDust * this.stats.shardMult);
   }
 
@@ -167,8 +157,7 @@ export class Game {
     Audio.sfx.clear();
     UI.toast(`Level ${this.level} clear!`, 'good');
     this._bankShards(BALANCE.shardPerLevel);
-    this.state = 'cleared';
-    this._clearedTimer = 1.1;
+    this._showPick();
   }
 
   _bankShards(n) {
@@ -182,15 +171,15 @@ export class Game {
   }
 
   _showPick() {
-    // gameplay pauses while picking
+    // show the 1-of-3 upgrade pick at the END of a cleared level
     this.state = 'pick';
-    document.getElementById('pick-title').textContent = `BOT LEVEL ${this.stats.level}`;
+    document.getElementById('pick-title').textContent = `LEVEL ${this.level} CLEAR`;
     const picks = rollPicks(this.stats);
     UI.buildPicks(picks, this.stats, id => {
       Audio.sfx.upgrade();
       applyPick(this.stats, id);
       UI.hide('pick-panel');
-      this.state = 'run';
+      this.loadLevel(this.level + 1);
     });
     UI.show('pick-panel');
   }
