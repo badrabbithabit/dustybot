@@ -61,7 +61,7 @@ export class Game {
   loadLevel(n) {
     this.level = n;
     const def = levelDef(n);
-    this.world.setLevel(def.theme, def.obstacles);
+    this.world.setLevel(def.theme, def.obstacles, def.themeKey);
 
     // bot at a clear spot (every layout keeps the arena center free)
     this.bot.x = this.world.W / 2;
