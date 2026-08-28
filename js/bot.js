@@ -109,10 +109,11 @@ export class Bot {
     }
     this._wasHitWall = this._hitWall;
 
-    // steer: follow user input, or the pending bounce heading, at turn rate
+    // steer: the pending bounce heading wins (so the spin isn't overridden by
+    // input mid-turn); otherwise follow user input. Both at turn rate.
     let steerTarget = null;
-    if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
-    else if (this._bounceTarget != null) steerTarget = this._bounceTarget;
+    if (this._bounceTarget != null) steerTarget = this._bounceTarget;
+    else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
     if (steerTarget != null) {
       let d = steerTarget - this.heading;
       d = Math.atan2(Math.sin(d), Math.cos(d));
