@@ -18,8 +18,8 @@ export class Bot {
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
-    this._spinDir = 1;    // alternates each wall bounce: +1 ccw, -1 cw
-    this._wasHitWall = false;
+    this._spinDir = 1;     // alternates each wall bounce: +1 ccw, -1 cw
+    this._bounceTimer = 0; // s of bounce-heading lock remaining
     this._bounceTarget = null;
     this._nx = 0; this._ny = 0;
     this.onBoost = null;
@@ -97,29 +97,30 @@ export class Bot {
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
 
-    // wall bounce (roomba-style): on the FIRST frame we touch a surface, aim
-    // 45° off the surface normal — measured from the object we hit — and let
-    // the turn rate steer us there. Armed once per contact so sliding along
-    // the wall doesn't re-trigger it (no wiggle).
-    if (this._hitWall && !this._wasHitWall && mag > 0.1 && this._bounceTarget == null) {
+    // wall bounce (roomba-style): the moment we touch a surface, lock a heading
+    // 45° off the surface normal (measured from the object hit) and hold it for
+    // a short bounce window. Holding it (time-based, not touch-based) keeps the
+    // bot rolling OUT along the wall instead of sliding — user input is ignored
+    // for the duration so it can't yank the bot back into the wall. Edge-armed
+    // so it can't re-trigger/wiggle while sliding.
+    this._bounceTimer = Math.max(0, this._bounceTimer - dt);
+    if (this._hitWall && this._bounceTimer <= 0 && mag > 0.1) {
       // surface normal points from the wall into the bot; to a heading (0=up)
       const nAngle = Math.atan2(this._nx, -this._ny);
       this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
       this._spinDir *= -1; // alternate which side of the normal we bail off
+      this._bounceTimer = 0.5; // s of rolling off the wall before input resumes
     }
-    this._wasHitWall = this._hitWall;
 
-    // steer: the pending bounce heading wins (so the spin isn't overridden by
-    // input mid-turn); otherwise follow user input. Both at turn rate.
+    // steer: during the bounce window the locked heading wins; otherwise input.
     let steerTarget = null;
-    if (this._bounceTarget != null) steerTarget = this._bounceTarget;
+    if (this._bounceTimer > 0 && this._bounceTarget != null) steerTarget = this._bounceTarget;
     else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
     if (steerTarget != null) {
       let d = steerTarget - this.heading;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       const maxTurn = s.turnRate * dt;
       this.heading += Math.max(-maxTurn, Math.min(maxTurn, d));
-      if (Math.abs(d) <= maxTurn) this._bounceTarget = null; // reached it
     }
 
     // spin: negative = counter-clockwise, the "right" way for a vac's brush
