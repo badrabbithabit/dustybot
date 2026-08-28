@@ -18,7 +18,10 @@ export class Bot {
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
-    this._spinDir = 1;   // alternates each wall bounce: +1 ccw, -1 cw
+    this._spinDir = 1;    // alternates each wall bounce: +1 ccw, -1 cw
+    this._wasHitWall = false;
+    this._bounceTarget = null;
+    this._nx = 0; this._ny = 0;
     this.onBoost = null;
     this._shadow = null;
   }
@@ -49,8 +52,10 @@ export class Bot {
       }
     }
     if (moved < Math.abs(delta)) {
-      // we were blocked; kill velocity into the surface
-      if (axis === 'x') this.vx = 0; else this.vy = 0;
+      // we were blocked; kill velocity into the surface and record the
+      // surface normal (points into the bot, i.e. "out of" the wall)
+      if (axis === 'x') { this.vx = 0; this._nx = -dir; this._ny = 0; }
+      else { this.vy = 0; this._nx = 0; this._ny = -dir; }
       this._hitWall = true;
     }
   }
@@ -67,20 +72,14 @@ export class Bot {
     const s = this.stats;
     this.full = this.full && this.bin >= BALANCE.bin.fullAt;
 
-    // steering
+    // steering input
     let ix = input.x, iy = input.y;
     if (input.tap) {
       const dx = input.tap.x - this.x, dy = input.tap.y - this.y;
       const d = Math.hypot(dx, dy);
       if (d > 0.6) { ix = dx / d; iy = dy / d; }
     }
-    if (ix !== 0 || iy !== 0) {
-      const target = Math.atan2(ix, iy);
-      let d = target - this.heading;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      const maxTurn = s.turnRate * dt;
-      this.heading += Math.max(-maxTurn, Math.min(maxTurn, d));
-    }
+    const mag = Math.min(1, Math.hypot(ix, iy));
 
     // boost
     this.boostCd = Math.max(0, this.boostCd - dt);
@@ -90,18 +89,36 @@ export class Bot {
 
     const clogWeight = this.full ? 1 / BALANCE.bin.clogWeightMult : 1;
     const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight;
-    const mag = Math.min(1, Math.hypot(ix, iy));
-    // wall bounce: roomba-style spin 45° and continue, instead of sliding along
-    this._hitWall = false;
+
+    // velocity from current heading, then integrate with collision
     this.vx = Math.sin(this.heading) * speed * mag;
     this.vy = -Math.cos(this.heading) * speed * mag;   // heading 0 = up on screen
-    // integrate with obstacle collision (slide along faces)
+    this._hitWall = false;
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
-    if (this._hitWall && mag > 0.1) {
-      // roomba-style: spin 45° and continue, alternating direction each bounce
-      this.heading -= this._spinDir * (Math.PI / 4);
-      this._spinDir *= -1;
+
+    // wall bounce (roomba-style): on the FIRST frame we touch a surface, aim
+    // 45° off the surface normal — measured from the object we hit — and let
+    // the turn rate steer us there. Armed once per contact so sliding along
+    // the wall doesn't re-trigger it (no wiggle).
+    if (this._hitWall && !this._wasHitWall && mag > 0.1 && this._bounceTarget == null) {
+      // surface normal points from the wall into the bot; to a heading (0=up)
+      const nAngle = Math.atan2(this._nx, -this._ny);
+      this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
+      this._spinDir *= -1; // alternate which side of the normal we bail off
+    }
+    this._wasHitWall = this._hitWall;
+
+    // steer: follow user input, or the pending bounce heading, at turn rate
+    let steerTarget = null;
+    if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
+    else if (this._bounceTarget != null) steerTarget = this._bounceTarget;
+    if (steerTarget != null) {
+      let d = steerTarget - this.heading;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      const maxTurn = s.turnRate * dt;
+      this.heading += Math.max(-maxTurn, Math.min(maxTurn, d));
+      if (Math.abs(d) <= maxTurn) this._bounceTarget = null; // reached it
     }
 
     // spin: negative = counter-clockwise, the "right" way for a vac's brush
