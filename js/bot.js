@@ -18,6 +18,7 @@ export class Bot {
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
+    this._spinDir = 1;   // alternates each wall bounce: +1 ccw, -1 cw
     this.onBoost = null;
     this._shadow = null;
   }
@@ -50,6 +51,7 @@ export class Bot {
     if (moved < Math.abs(delta)) {
       // we were blocked; kill velocity into the surface
       if (axis === 'x') this.vx = 0; else this.vy = 0;
+      this._hitWall = true;
     }
   }
   dumpBin() {
@@ -89,11 +91,18 @@ export class Bot {
     const clogWeight = this.full ? 1 / BALANCE.bin.clogWeightMult : 1;
     const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight;
     const mag = Math.min(1, Math.hypot(ix, iy));
+    // wall bounce: roomba-style spin 45° and continue, instead of sliding along
+    this._hitWall = false;
     this.vx = Math.sin(this.heading) * speed * mag;
     this.vy = -Math.cos(this.heading) * speed * mag;   // heading 0 = up on screen
     // integrate with obstacle collision (slide along faces)
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
+    if (this._hitWall && mag > 0.1) {
+      // roomba-style: spin 45° and continue, alternating direction each bounce
+      this.heading -= this._spinDir * (Math.PI / 4);
+      this._spinDir *= -1;
+    }
 
     // spin: negative = counter-clockwise, the "right" way for a vac's brush
     // (sweeps dust IN toward the body instead of flinging it off)
