@@ -18,9 +18,10 @@ export class Bot {
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
-    this._spinDir = 1;     // alternates each wall bounce: +1 ccw, -1 cw
-    this._bounceTimer = 0; // s of bounce-heading lock remaining
+    this._spinDir = 1;      // alternates each wall bounce: +1 ccw, -1 cw
+    this._bounceTimer = 0;  // s of bounce-heading lock remaining
     this._bounceTarget = null;
+    this._wasClear = true;  // was not touching a wall last frame (for edge detect)
     this._nx = 0; this._ny = 0;
     this.onBoost = null;
     this._shadow = null;
@@ -103,8 +104,14 @@ export class Bot {
     // bot rolling OUT along the wall instead of sliding — user input is ignored
     // for the duration so it can't yank the bot back into the wall. Edge-armed
     // so it can't re-trigger/wiggle while sliding.
+    // Only arm a bounce on a FRESH approach: the bot must have been clear of
+    // the wall the previous frame and now be touching it. While it's held
+    // against the wall (still touching), no new bounce fires — that's what
+    // caused the wiggle when driving into a wall and getting bounced back.
+    const freshTouch = this._hitWall && this._wasClear;
+    this._wasClear = !this._hitWall;
     this._bounceTimer = Math.max(0, this._bounceTimer - dt);
-    if (this._hitWall && this._bounceTimer <= 0 && mag > 0.1) {
+    if (freshTouch && mag > 0.1) {
       // surface normal points from the wall into the bot; to a heading (0=up)
       const nAngle = Math.atan2(this._nx, -this._ny);
       this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
