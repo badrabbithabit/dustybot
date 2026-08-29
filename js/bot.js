@@ -21,6 +21,7 @@ export class Bot {
     this._spinDir = 1;      // alternates each wall bounce: +1 ccw, -1 cw
     this._bounceTarget = null; // heading to turn toward while bouncing
     this._bounceN = null;   // normal of the surface we're bouncing off
+    this._bounceInput = null; // stick vector that caused the hit (to detect a change)
     this._bounceCd = 0;     // s until the next bounce may re-arm (anti machine-gun)
     this._wasClear = true;  // was not touching a wall last frame (edge detect)
     this._nx = 0; this._ny = 0;
@@ -119,17 +120,20 @@ export class Bot {
       const nAngle = Math.atan2(this._nx, -this._ny);
       this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
       this._spinDir *= -1; // alternate which side of the normal we bail off
+      this._bounceInput = { x: ix, y: iy }; // the stick that caused the hit
       this._bounceCd = 0.6; // s before another bounce may fire (prevents re-bounce sway)
     }
-    // The bounce ends once the bot has swung to a heading that points back OUT
-    // of the wall (forward·normal > 0) — i.e. it's finished turning 45° off the
-    // normal. We do NOT gate this on continuous wall contact: a single frame of
-    // hit=false (the bot sliding along the face) must not kill a turn that is
-    // only part-way done. The 0.6s cooldown already stops machine-gun re-arming.
+    // The bounce keeps steering (ignoring the stick) until EITHER the user
+    // deliberately CHANGES their input direction, OR the bot has finished
+    // swinging 45° off the normal and now points back out of the wall. Holding
+    // the same stick that caused the hit does not cancel the deflection.
     if (this._bounceTarget != null && this._bounceN) {
+      const inputChanged =
+        (ix - this._bounceInput.x) * (ix - this._bounceInput.x) +
+        (iy - this._bounceInput.y) * (iy - this._bounceInput.y) > 0.01;
       const fwx = Math.sin(this.heading), fwy = -Math.cos(this.heading);
       const pointingOut = (fwx * this._bounceN.x + fwy * this._bounceN.y) > 0;
-      if (pointingOut) this._bounceTarget = null;
+      if (inputChanged || pointingOut) { this._bounceTarget = null; this._bounceInput = null; }
     }
 
     // steer: an active bounce heading wins (so input can't yank us back into
