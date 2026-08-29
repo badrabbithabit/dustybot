@@ -121,15 +121,15 @@ export class Bot {
       this._spinDir *= -1; // alternate which side of the normal we bail off
       this._bounceCd = 0.6; // s before another bounce may fire (prevents re-bounce sway)
     }
-    // end the bounce once we've rolled off the surface or are pointing away
-    if (this._bounceTarget != null) {
-      const stillOn = this._hitWall && this._bounceN &&
-        Math.abs(this._nx - this._bounceN.x) < 1e-6 &&
-        Math.abs(this._ny - this._bounceN.y) < 1e-6;
-      // heading's outward component vs the bounce normal
+    // The bounce ends once the bot has swung to a heading that points back OUT
+    // of the wall (forward·normal > 0) — i.e. it's finished turning 45° off the
+    // normal. We do NOT gate this on continuous wall contact: a single frame of
+    // hit=false (the bot sliding along the face) must not kill a turn that is
+    // only part-way done. The 0.6s cooldown already stops machine-gun re-arming.
+    if (this._bounceTarget != null && this._bounceN) {
       const fwx = Math.sin(this.heading), fwy = -Math.cos(this.heading);
-      const pointingAway = (fwx * this._bounceN.x + fwy * this._bounceN.y) > 0;
-      if (!stillOn || pointingAway) this._bounceTarget = null;
+      const pointingOut = (fwx * this._bounceN.x + fwy * this._bounceN.y) > 0;
+      if (pointingOut) this._bounceTarget = null;
     }
 
     // steer: an active bounce heading wins (so input can't yank us back into
