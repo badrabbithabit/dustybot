@@ -19,9 +19,10 @@ export class Bot {
     this.alive = true;
     this._brush = 0;
     this._spinDir = 1;      // alternates each wall bounce: +1 ccw, -1 cw
-    this._bounceTimer = 0;  // s of bounce-heading lock remaining
-    this._bounceTarget = null;
-    this._wasClear = true;  // was not touching a wall last frame (for edge detect)
+    this._bounceTarget = null; // heading to turn toward while bouncing
+    this._bounceN = null;   // normal of the surface we're bouncing off
+    this._bounceCd = 0;     // s until the next bounce may re-arm (anti machine-gun)
+    this._wasClear = true;  // was not touching a wall last frame (edge detect)
     this._nx = 0; this._ny = 0;
     this.onBoost = null;
     this._shadow = null;
@@ -98,30 +99,44 @@ export class Bot {
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
 
-    // wall bounce (roomba-style): the moment we touch a surface, lock a heading
-    // 45° off the surface normal (measured from the object hit) and hold it for
-    // a short bounce window. Holding it (time-based, not touch-based) keeps the
-    // bot rolling OUT along the wall instead of sliding — user input is ignored
-    // for the duration so it can't yank the bot back into the wall. Edge-armed
-    // so it can't re-trigger/wiggle while sliding.
-    // Only arm a bounce on a FRESH approach: the bot must have been clear of
-    // the wall the previous frame and now be touching it. While it's held
-    // against the wall (still touching), no new bounce fires — that's what
-    // caused the wiggle when driving into a wall and getting bounced back.
+    // wall bounce (roomba-style): on a FRESH impact (was clear, now touching)
+    // aim 45° off the surface normal — measured from the object hit — and steer
+    // there at the bot's turn rate. The bounce ends as soon as the bot is no
+    // longer touching the wall OR its heading is already pointing away from it,
+    // so it gives one clean deflection and then normal control resumes. While
+    // held against the same surface (still touching, same normal) it does NOT
+    // re-arm — the existing slide (into-wall velocity zeroed in _moveAxis)
+    // carries the bot along the wall instead of bouncing back and forth.
     const freshTouch = this._hitWall && this._wasClear;
     this._wasClear = !this._hitWall;
-    this._bounceTimer = Math.max(0, this._bounceTimer - dt);
-    if (freshTouch && mag > 0.1) {
-      // surface normal points from the wall into the bot; to a heading (0=up)
+    // Only bounce on a glancing/impact hit. If the user is actively driving
+    // INTO this wall (input has a component along the surface normal), don't
+    // bounce — let the normal slide carry the bot along the wall instead. That
+    // is what stopped the back-and-forth sway when held against a wall.
+    const pushingIn = (ix * this._nx + iy * this._ny) > 0.25 * mag;
+    this._bounceCd = Math.max(0, this._bounceCd - dt);
+    if (freshTouch && mag > 0.1 && !pushingIn && this._bounceCd <= 0) {
+      this._bounceN = { x: this._nx, y: this._ny };
       const nAngle = Math.atan2(this._nx, -this._ny);
       this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
       this._spinDir *= -1; // alternate which side of the normal we bail off
-      this._bounceTimer = 0.5; // s of rolling off the wall before input resumes
+      this._bounceCd = 0.4; // s before another bounce may fire
+    }
+    // end the bounce once we've rolled off the surface or are pointing away
+    if (this._bounceTarget != null) {
+      const stillOn = this._hitWall && this._bounceN &&
+        Math.abs(this._nx - this._bounceN.x) < 1e-6 &&
+        Math.abs(this._ny - this._bounceN.y) < 1e-6;
+      // heading's outward component vs the bounce normal
+      const fwx = Math.sin(this.heading), fwy = -Math.cos(this.heading);
+      const pointingAway = (fwx * this._bounceN.x + fwy * this._bounceN.y) > 0;
+      if (!stillOn || pointingAway) this._bounceTarget = null;
     }
 
-    // steer: during the bounce window the locked heading wins; otherwise input.
+    // steer: an active bounce heading wins (so input can't yank us back into
+    // the wall mid-deflection); otherwise follow user input. Both at turn rate.
     let steerTarget = null;
-    if (this._bounceTimer > 0 && this._bounceTarget != null) steerTarget = this._bounceTarget;
+    if (this._bounceTarget != null) steerTarget = this._bounceTarget;
     else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
     if (steerTarget != null) {
       let d = steerTarget - this.heading;
