@@ -113,14 +113,13 @@ export class Bot {
     // INTO this wall (input has a component along the surface normal), don't
     // bounce — let the normal slide carry the bot along the wall instead. That
     // is what stopped the back-and-forth sway when held against a wall.
-    const pushingIn = (ix * this._nx + iy * this._ny) > 0.25 * mag;
     this._bounceCd = Math.max(0, this._bounceCd - dt);
-    if (freshTouch && mag > 0.1 && !pushingIn && this._bounceCd <= 0) {
+    if (freshTouch && mag > 0.1 && this._bounceCd <= 0) {
       this._bounceN = { x: this._nx, y: this._ny };
       const nAngle = Math.atan2(this._nx, -this._ny);
       this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
       this._spinDir *= -1; // alternate which side of the normal we bail off
-      this._bounceCd = 0.4; // s before another bounce may fire
+      this._bounceCd = 0.6; // s before another bounce may fire (prevents re-bounce sway)
     }
     // end the bounce once we've rolled off the surface or are pointing away
     if (this._bounceTarget != null) {
