@@ -2,7 +2,8 @@
 // (residential -> office -> store -> space, looping with a per-rotation ramp).
 // Each level: fixed obstacles + a FIXED set of themed dirt scattered at start
 // (no regen); the dirt count scales with the level number. Clear a level by
-// vacuuming every mote, then pick 1 of 3 upgrades. NO failure mode.
+// vacuuming every mote AND dumping it all at the dock, then pick 1 of 3
+// upgrades. NO failure mode.
 import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal, BOTS } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
@@ -59,6 +60,7 @@ export class Game {
     this.level = 1;
     this._frac = 0;
     this._fullWarned = false;
+    this._cleared = 0;   // dirt dumped from the bin this level (drives level clear)
     this.bot = new Bot(this.world, this.stats);
     this.bot.onBoost = () => {
       Audio.sfx.boost();
@@ -87,6 +89,7 @@ export class Game {
     // scatter the level's fixed themed dirt (does not regenerate)
     this._levelDirtTotal = def.dirtCount;
     this.stats.dirtCollected = 0;
+    this._cleared = 0;   // reset the dumped-dirt counter for this level
     this.dust.spawnLevel(def.dirtCount, def.theme);
 
     this.state = 'intro';
@@ -132,11 +135,14 @@ export class Game {
       this._fullWarned = false;
     }
 
-    // dock: empty the bin (keeps suction working; no XP)
+    // dock: empty the bin. Dirt only counts as CLEARED once it leaves the bin
+    // here, so the level ends when you've dumped everything you vacuumed —
+    // not the moment it's sucked up (the bin still holds it).
     const dock = BALANCE.dock;
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
       const v = this.bot.dumpBin();
+      this._cleared = Math.min(this._levelDirtTotal, this._cleared + v);
       Audio.sfx.dump();
       this.bot._dumpXp = 0;
       UI.toast(`Bin dumped — ${v} motes`, 'good');
@@ -145,8 +151,8 @@ export class Game {
     // passive shard trickle
     this._bankShards(BALANCE.shardPerSecond * this.stats.shardMult * dt);
 
-    // level clears when every mote has been COLLECTED (vacuumed into the bin)
-    if (this.stats.dirtCollected >= this._levelDirtTotal) {
+    // level clears once every mote of this level has been vacuumed AND dumped
+    if (this._cleared >= this._levelDirtTotal) {
       this._levelClear();
       return;
     }
