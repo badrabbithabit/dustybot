@@ -10,8 +10,8 @@
 
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
-  bot: { radius: 1.0, boostMult: 1.7, boostCd: 4.0, boostCdFloor: 1.0 },
-  bin: { clogSuctionMult: 0.5, clogWeightMult: 1.25 },
+  bot: { radius: 1.0, boostMult: 1.7, boostCd: 4.0, boostCdFloor: 1.0, boostDur: 1.0 },
+  bin: { clogWeightMult: 1.25 },   // (dead clogSuctionMult removed: suction is fully OFF when clogged)
   dirt: {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
@@ -54,7 +54,7 @@ export const BOTS = {
     blurb: 'Quick, nimble, and its LiDAR sees around corners. Big hopper.',
     colors: { rim: '#12304d', body: '#5cc8ff', bodyDk: '#1f5f8a', dome: '#0e1a28', domeHi: '#a8e6ff' },
     stats: {
-      suction: 0.9, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 1,
+      suction: 1.0, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 1,
       speed: 7.2, turnRate: 6.4, magnetRange: 0.6,
       binMax: 130, boostCdMult: 1.0, shardMult: 1.0,
     },
@@ -64,12 +64,12 @@ export const BOTS = {
   shark: {
     name: 'SHARK', icon: '🟣', shape: 'shark',
     sub: 'Shark · self-empty powerhead',
-    blurb: 'Brutal suction and a sticky magnet. But slow, and the hopper is tiny.',
+    blurb: 'Brutal suction, and a magnet that sings once upgraded. But slow, and the hopper runs full fast.',
     colors: { rim: '#2c1447', body: '#c07bff', bodyDk: '#7a3fae', dome: '#190c28', domeHi: '#dcb9ff' },
     stats: {
       suction: 1.3, suctionRange: 4.2, pickupRadius: 1.9, brushLevel: 1,
       speed: 5.1, turnRate: 4.0, magnetRange: 1.6,
-      binMax: 70, boostCdMult: 0.85, shardMult: 1.0,
+      binMax: 90, boostCdMult: 0.85, shardMult: 1.0,
     },
   },
 };
@@ -81,8 +81,13 @@ export const RUN_UPGRADES = [
     desc: lvl => `+20% suction & range, +5 bin (L${lvl})`,
     apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.5; s.binMax += 5; } },
   { id: 'brush', name: 'Turbo Brush', icon: '🪥', max: 5, weight: 3,
-    desc: lvl => lvl <= 1 ? `Adds a side brush (L1)` : `+20% pickup, brush grows (L${lvl})`,
-    apply: (s, n) => { s.brushLevel = n; if (n >= 2) s.pickupRadius *= 1.2; } },
+    desc: lvl => `Brush grows, +20% pickup (L${lvl})`,
+    // ADDITIVE: bot bases differ (Roomba starts at brushLevel 2) so an
+    // absolute `= n` would have DOWNGRADED it on the first pick.
+    apply: (s) => {
+      s.brushLevel = Math.min(5, (s.brushLevel || 0) + 1);
+      if (s.brushLevel >= 2) s.pickupRadius *= 1.2;
+    } },
   { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 3,
     desc: lvl => `+10% speed & turning (L${lvl})`,
     apply: (s, n) => { s.speed *= 1.10; s.turnRate *= 1.10; } },

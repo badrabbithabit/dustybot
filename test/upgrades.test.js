@@ -7,6 +7,7 @@ import {
   BALANCE, BOTS, BOT_ORDER, RUN_UPGRADES, META_UPGRADES,
   makeRunStats, rollPicks, applyPick, metaCost, levelDef, THEME_ORDER,
 } from '../js/upgrades.js';
+import { Bot } from '../js/bot.js';
 
 const fresh = bot => makeRunStats({}, bot || 'roomba');
 const lvl = (s, id) => (s._runLevels || (s._runLevels = {}))[id] || 0;
@@ -54,6 +55,41 @@ test('applyPick: respects max level and mutates stats', () => {
   assert.equal(applyPick(s, 'nope'), false, 'unknown id is a no-op');
 });
 
+test('Turbo Brush is additive and never downgrades (B3 regression)', () => {
+  // Roomba starts at brushLevel 2; the old absolute `= n` set it back to 1
+  // on the first pick.
+  const r = fresh('roomba');
+  const pickup0 = r.pickupRadius;
+  assert.ok(applyPick(r, 'brush'));
+  assert.equal(r.brushLevel, 3, 'Roomba L2 -> L3, not a downgrade to L1');
+  assert.ok(r.pickupRadius > pickup0, 'pickup bonus still applies at >=L2');
+  const m = fresh('mi');                       // starts at brushLevel 1
+  assert.ok(applyPick(m, 'brush'));
+  assert.equal(m.brushLevel, 2, 'Mi L1 -> L2');
+  const s = fresh('mi');
+  for (let i = 0; i < 10; i++) applyPick(s, 'brush');
+  assert.equal(s.brushLevel, 5, 'capped at brushLevel 5');
+});
+
+test('boost: held boost fires ~1s bursts on the boostCd period (B1 regression)', () => {
+  assert.ok(BALANCE.bot.boostDur > 0, 'boostDur is defined');
+  const world = { W: 44, H: 44, isFree: () => true };
+  const stats = fresh('roomba');
+  const bot = new Bot(world, stats);
+  bot.onBoost = () => {  // same wiring as game.js
+    bot.boostCd = Math.max(BALANCE.bot.boostCdFloor, BALANCE.bot.boostCd * stats.boostCdMult);
+  };
+  const dt = 1 / 60, frames = 480;             // 8 s of holding the button
+  let boosted = 0;
+  for (let i = 0; i < frames; i++) {
+    bot.update(dt, { x: 0, y: 1, boost: true });
+    if (bot.boosting) boosted++;
+  }
+  // 2 bursts x ~60 frames ~= 120 frames (25% duty). The old code gave ~2.
+  assert.ok(boosted >= 90, `expected ~120 boosted frames, got ${boosted}`);
+  assert.ok(boosted <= 240, 'boost must not be active every frame');
+});
+
 test('metaCost: base * 1.6^lvl, Infinity for unknown', () => {
   assert.equal(metaCost('meta_suction', 0), 20);
   assert.equal(metaCost('meta_suction', 10), Math.round(20 * Math.pow(1.6, 10)));
@@ -64,7 +100,7 @@ test('metaCost: base * 1.6^lvl, Infinity for unknown', () => {
 test('makeRunStats: per-bot bases, meta math, suction cap x3', () => {
   const r = fresh('roomba'), m = fresh('mi'), k = fresh('shark');
   assert.equal(r.speed, 6.0);  assert.equal(m.speed, 7.2);  assert.equal(k.speed, 5.1);
-  assert.equal(r.binMax, 100); assert.equal(m.binMax, 130); assert.equal(k.binMax, 70);
+  assert.equal(r.binMax, 100); assert.equal(m.binMax, 130); assert.equal(k.binMax, 90);
   assert.equal(r.goldChance, BALANCE.dirt.goldChance);
 
   const meta = {};

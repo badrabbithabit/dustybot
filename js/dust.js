@@ -72,7 +72,6 @@ export class DustSystem {
     // per-bot range identity + Suction Core + Mote Magnet all take effect
     // (previously suction only ever reached pickupR + 1 and suckR was dead).
     const suckR = canVacuum ? Math.max(pickupR + 0.5, stats.suctionRange * stats.suction) : 0;
-    const clogMult = canVacuum ? 1 : BALANCE.bin.clogSuctionMult;
     const brushLvl = (bot.stats && bot.stats.brushLevel) || 0;
 
     for (let i = this.items.length - 1; i >= 0; i--) {
@@ -92,7 +91,7 @@ export class DustSystem {
       const dist = Math.hypot(dx, dy);
       if (dist < suckR) {
         const f = 1 - dist / suckR;
-        const force = f * f * 34 * stats.suction * clogMult;
+        const force = f * f * 34 * stats.suction;
         it.vx += dx / (dist + 0.001) * force * dt * 6;
         it.vy += dy / (dist + 0.001) * force * dt * 6;
       }

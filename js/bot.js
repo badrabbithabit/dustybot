@@ -17,6 +17,7 @@ export class Bot {
     this.bin = 0;
     this.full = false;
     this.boostCd = 0;
+    this.boostDur = 0;
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
@@ -87,11 +88,18 @@ export class Bot {
     }
     const mag = Math.min(1, Math.hypot(ix, iy));
 
-    // boost
+    // boost: holding boost fires a `boostDur` burst whenever the cooldown is
+    // clear; onBoost() (wired by game.js) sets boostCd, so one hold =
+    // burst, cooldown, burst again (~25% duty at base stats).
     this.boostCd = Math.max(0, this.boostCd - dt);
-    const wantBoost = input.boost && this.boostCd === 0;
-    if (wantBoost && !this.boosting) { this.boosting = true; this.onBoost && this.onBoost(); }
-    if (!wantBoost) this.boosting = false;
+    this.boostDur = Math.max(0, (this.boostDur || 0) - dt);
+    const wantBoost = input.boost && this.boostCd === 0 && this.boostDur === 0;
+    if (wantBoost && !this.boosting) {
+      this.boostDur = BALANCE.bot.boostDur;
+      this.boosting = true;
+      this.onBoost && this.onBoost();
+    }
+    this.boosting = this.boostDur > 0;
 
     const clogWeight = this.full ? 1 / BALANCE.bin.clogWeightMult : 1;
     const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight;
