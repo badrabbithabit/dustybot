@@ -22,11 +22,11 @@ export class Bot {
     this.alive = true;
     this._brush = 0;
     this._spinDir = 1;      // alternates which side a head-on bounce rolls off
-    this._bounceTarget = null; // reflected heading to roll toward while bouncing
-    this._bounceInput = null;  // stick vector that caused the hit (change detection)
-    this._bounceT = 0;        // s the bounce has been active (safety max)
     this._bounceCd = 0;     // s until the next bounce may re-arm (anti machine-gun)
-    this._wasClear = true;  // was not touching a wall last frame (edge detect)
+    this._bounceTarget = null; // reflected heading to steer toward while touching wall
+    this._bounceInput = null;  // "x,y" string of the stick that caused the hit
+    this._clearFrames = 0;    // consecutive frames the bot has been off the wall
+    this._wasClear = true;    // was not touching a wall last frame (edge detect)
     this._nx = 0; this._ny = 0;
     this.onBoost = null;
     this._shadow = null;
@@ -104,28 +104,24 @@ export class Bot {
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
 
-    // Wall bounce (Roomba-style reflection). On a FRESH impact we reflect the
-    //     // incoming heading about the surface normal — exactly how a Roomba bounces:
-    // come in at an angle, leave at the mirror angle and keep rolling that way.
-    // While the bounce is playing out the bot IGNORES the stick that caused the
-    // hit (so a held "up" doesn't yank it back into the wall); the stick only
-    // takes back control once the player CHANGES their input direction. This
-    // reads as a physical deflection, not the bot fighting the controls.
+    // Wall bounce (Roomba-style reflection). On a FRESH impact, compute the
+    // mirror-reflection heading and steer toward it. The bounce stays active
+    // for as long as the bot is touching the wall — so the held "up" input
+    // doesn't yank the heading back into the wall and cause wiggling. The
+    // moment the bot rolls clear of the wall, control returns to the stick.
+    // If the player changes their input direction mid-bounce, we also drop the
+    // bounce immediately and follow the new direction.
     const freshTouch = this._hitWall && this._wasClear;
     this._wasClear = !this._hitWall;
     this._bounceCd = Math.max(0, this._bounceCd - dt);
+
     if (freshTouch && mag > 0.1 && this._bounceCd <= 0) {
-      // incoming direction = the heading we were traveling when we hit
-      // (velocity in screen space: +y is down on screen)
       const ivx = Math.sin(this.heading), ivy = -Math.cos(this.heading);
-      // reflect about the surface normal: v' = v - 2(v·n) n
       const dot = ivx * this._nx + ivy * this._ny;
       let rx = ivx - 2 * dot * this._nx;
       let ry = ivy - 2 * dot * this._ny;
-      let bounceH = Math.atan2(rx, -ry); // heading 0 = up, so -ry
-      // If the reflection reverses us by more than ~60deg (a near head-on hit),
-      // a full 180 turn would grind us against the wall. Instead roll off at a
-      // 45deg angle from the normal (alternating side) like a real Roomba.
+      let bounceH = Math.atan2(rx, -ry);
+      // Near head-on: roll off at 45deg from normal instead of a hard reversal
       let dh = bounceH - this.heading;
       dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       if (Math.abs(dh) > Math.PI / 3) {
@@ -134,26 +130,22 @@ export class Bot {
         this._spinDir *= -1;
       }
       this._bounceTarget = bounceH;
-      this._bounceInput = { x: ix, y: iy }; // the stick that caused the hit
-      this._bounceT = 0;
-      this._bounceCd = 0.5; // s before another bounce may fire (anti machine-gun)
+      this._bounceInput = ix + ',' + iy;
+      this._bounceCd = 0.3;
     }
-    // While bouncing, keep steering toward the reflected heading. Hand control
-    // back to the stick as soon as the player CHANGES their input direction
-    // (or after a safety max, in case they just hold and walk off). The same
-    // stick that caused the hit does NOT cancel the deflection.
+    // Drop the bounce once the bot has been clear of the wall for a few frames
+    // (filters out per-frame contact flickering) or if the player changed their
+    // input direction.
     if (this._bounceTarget != null) {
-      this._bounceT += dt;
-      const inputChanged =
-        (ix - this._bounceInput.x) * (ix - this._bounceInput.x) +
-        (iy - this._bounceInput.y) * (iy - this._bounceInput.y) > 0.01;
-      if (inputChanged || this._bounceT > 1.2) {
-        this._bounceTarget = null; this._bounceInput = null;
+      this._clearFrames = this._hitWall ? 0 : this._clearFrames + 1;
+      if (this._clearFrames >= 3 || this._bounceInput !== (ix + ',' + iy)) {
+        this._bounceTarget = null;
+        this._bounceInput = null;
+        this._clearFrames = 0;
       }
     }
 
-    // steer: an active bounce heading wins while it's playing out; otherwise
-    // follow user input. Both at turn rate.
+    // steer: bounce heading wins while touching the wall; otherwise follow input.
     let steerTarget = null;
     if (this._bounceTarget != null) steerTarget = this._bounceTarget;
     else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
