@@ -1,12 +1,15 @@
 // bot.js — the robot vacuum, top-down 2D sprite + movement. No health/battery;
 // it has a dust bin (clogs when full) and a boost with cooldown.
-import { BALANCE } from './upgrades.js';
+// Each bot (see BOTS in upgrades.js) has its own look, drawn in drawBot_*.
+import { BALANCE, BOTS } from './upgrades.js';
 import { PAL } from './palette.js';
 
 export class Bot {
   constructor(world, stats) {
     this.world = world;
     this.stats = stats;
+    this.botId = stats.bot || 'roomba';
+    this.botDef = BOTS[this.botId] || BOTS.roomba;
     this.x = world.W / 2;
     this.y = world.H / 2;
     this.heading = 0;
@@ -18,11 +21,10 @@ export class Bot {
     this.boosting = false;
     this.alive = true;
     this._brush = 0;
-    this._spinDir = 1;      // alternates each wall bounce: +1 ccw, -1 cw
-    this._bounceTarget = null; // heading to turn toward while bouncing
-    this._bounceN = null;   // normal of the surface we're bouncing off
-    this._bounceInput = null; // stick vector that caused the hit (to detect a change)
-    this._bounceT = 0;       // s of deflection steering remaining
+    this._spinDir = 1;      // alternates which side a head-on bounce rolls off
+    this._bounceTarget = null; // reflected heading to roll toward while bouncing
+    this._bounceInput = null;  // stick vector that caused the hit (change detection)
+    this._bounceT = 0;        // s the bounce has been active (safety max)
     this._bounceCd = 0;     // s until the next bounce may re-arm (anti machine-gun)
     this._wasClear = true;  // was not touching a wall last frame (edge detect)
     this._nx = 0; this._ny = 0;
@@ -39,7 +41,7 @@ export class Bot {
   // Advance one axis, stopping at the first collision (bounds or obstacle) so
   // the bot slides along faces instead of cornering into them.
   _moveAxis(axis, delta) {
-    if (delta === 0) return;
+    if (Math.abs(delta) < 1e-4) return; // ignore float noise (e.g. cos(90deg)!=0)
     const R = BALANCE.bot.radius;
     const dir = Math.sign(delta);
     let remaining = Math.abs(delta);
@@ -55,7 +57,7 @@ export class Bot {
         break; // hit a wall or obstacle face -> stop sliding this axis
       }
     }
-    if (moved < Math.abs(delta)) {
+    if (moved < Math.abs(delta) - 1e-4) {
       // we were blocked; kill velocity into the surface and record the
       // surface normal (points into the bot, i.e. "out of" the wall)
       if (axis === 'x') { this.vx = 0; this._nx = -dir; this._ny = 0; }
@@ -98,51 +100,60 @@ export class Bot {
     this.vx = Math.sin(this.heading) * speed * mag;
     this.vy = -Math.cos(this.heading) * speed * mag;   // heading 0 = up on screen
     this._hitWall = false;
+    this._nx = 0; this._ny = 0;
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
 
-    // wall bounce (roomba-style): on a FRESH impact (was clear, now touching)
-    // aim 45° off the surface normal — measured from the object hit — and steer
-    // there at the bot's turn rate. The bounce ends as soon as the bot is no
-    // longer touching the wall OR its heading is already pointing away from it,
-    // so it gives one clean deflection and then normal control resumes. While
-    // held against the same surface (still touching, same normal) it does NOT
-    // re-arm — the existing slide (into-wall velocity zeroed in _moveAxis)
-    // carries the bot along the wall instead of bouncing back and forth.
+    // Wall bounce (Roomba-style reflection). On a FRESH impact we reflect the
+    //     // incoming heading about the surface normal — exactly how a Roomba bounces:
+    // come in at an angle, leave at the mirror angle and keep rolling that way.
+    // While the bounce is playing out the bot IGNORES the stick that caused the
+    // hit (so a held "up" doesn't yank it back into the wall); the stick only
+    // takes back control once the player CHANGES their input direction. This
+    // reads as a physical deflection, not the bot fighting the controls.
     const freshTouch = this._hitWall && this._wasClear;
     this._wasClear = !this._hitWall;
-    // Only bounce on a glancing/impact hit. If the user is actively driving
-    // INTO this wall (input has a component along the surface normal), don't
-    // bounce — let the normal slide carry the bot along the wall instead. That
-    // is what stopped the back-and-forth sway when held against a wall.
     this._bounceCd = Math.max(0, this._bounceCd - dt);
     if (freshTouch && mag > 0.1 && this._bounceCd <= 0) {
-      this._bounceN = { x: this._nx, y: this._ny };
-      const nAngle = Math.atan2(this._nx, -this._ny);
-      this._bounceTarget = nAngle + this._spinDir * (Math.PI / 4);
-      this._spinDir *= -1; // alternate which side of the normal we bail off
+      // incoming direction = the heading we were traveling when we hit
+      // (velocity in screen space: +y is down on screen)
+      const ivx = Math.sin(this.heading), ivy = -Math.cos(this.heading);
+      // reflect about the surface normal: v' = v - 2(v·n) n
+      const dot = ivx * this._nx + ivy * this._ny;
+      let rx = ivx - 2 * dot * this._nx;
+      let ry = ivy - 2 * dot * this._ny;
+      let bounceH = Math.atan2(rx, -ry); // heading 0 = up, so -ry
+      // If the reflection reverses us by more than ~60deg (a near head-on hit),
+      // a full 180 turn would grind us against the wall. Instead roll off at a
+      // 45deg angle from the normal (alternating side) like a real Roomba.
+      let dh = bounceH - this.heading;
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      if (Math.abs(dh) > Math.PI / 3) {
+        const nAngle = Math.atan2(this._nx, -this._ny);
+        bounceH = nAngle + this._spinDir * (Math.PI / 4);
+        this._spinDir *= -1;
+      }
+      this._bounceTarget = bounceH;
       this._bounceInput = { x: ix, y: iy }; // the stick that caused the hit
-      // How long to keep steering along the deflection: long enough to swing
-      // 45deg off the normal at the bot's turn rate, plus margin to roll off.
-      const turn45 = (Math.PI / 4) / Math.max(0.1, s.turnRate);
-      this._bounceT = turn45 * 2.2;
-      this._bounceCd = 0.6; // s before another bounce may fire (prevents re-bounce sway)
+      this._bounceT = 0;
+      this._bounceCd = 0.5; // s before another bounce may fire (anti machine-gun)
     }
-    // While bouncing, ignore the stick and steer along the deflection. End the
-    // bounce when its time runs out OR the user deliberately changes direction.
-    // Holding the same stick that caused the hit does NOT cancel the deflection
-    // — that was the bug where a held joystick yanked the bot back into the wall
-    // before it had visibly angled off.
+    // While bouncing, keep steering toward the reflected heading. Hand control
+    // back to the stick as soon as the player CHANGES their input direction
+    // (or after a safety max, in case they just hold and walk off). The same
+    // stick that caused the hit does NOT cancel the deflection.
     if (this._bounceTarget != null) {
-      this._bounceT = Math.max(0, this._bounceT - dt);
+      this._bounceT += dt;
       const inputChanged =
         (ix - this._bounceInput.x) * (ix - this._bounceInput.x) +
         (iy - this._bounceInput.y) * (iy - this._bounceInput.y) > 0.01;
-      if (this._bounceT <= 0 || inputChanged) { this._bounceTarget = null; this._bounceInput = null; }
+      if (inputChanged || this._bounceT > 1.2) {
+        this._bounceTarget = null; this._bounceInput = null;
+      }
     }
 
-    // steer: an active bounce heading wins (so input can't yank us back into
-    // the wall mid-deflection); otherwise follow user input. Both at turn rate.
+    // steer: an active bounce heading wins while it's playing out; otherwise
+    // follow user input. Both at turn rate.
     let steerTarget = null;
     if (this._bounceTarget != null) steerTarget = this._bounceTarget;
     else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
@@ -188,64 +199,115 @@ export class Bot {
     c.save();
     c.translate(p.x, p.y);
     c.rotate(this.heading);
-    // front spinning brush (heading 0 = forward = -Y); count 0/1/2, grows per level
-    const bl = this.stats.brushLevel || 0;
-    if (bl > 0) {
-      const count = bl === 1 ? 1 : 2;
-      const reach = R * (1.0 + 0.12 * bl);
-      const br = R * 0.42;
-      c.strokeStyle = PAL.gold;
-      c.lineWidth = Math.max(2, R * 0.10);
-      c.lineCap = 'round';
-      for (let i = 0; i < count; i++) {
-        const off = i === 0 ? -0.72 : 0.72;
-        const cx = Math.sin(off) * reach;
-        const cy = -Math.cos(off) * reach;
-        c.beginPath();
-        for (let k = 0; k < 3; k++) {
-          const a = this._brush + k * (Math.PI * 2 / 3);
-          c.moveTo(cx, cy);
-          c.lineTo(cx + Math.cos(a) * br, cy + Math.sin(a) * br);
-        }
-        c.stroke();
-      }
-      c.lineCap = 'butt';
+    switch (this.botDef.shape) {
+      case 'lidar': this._drawMi(c, R); break;
+      case 'shark': this._drawShark(c, R); break;
+      default: this._drawRoomba(c, R);
     }
-    // ---- round body (roomba-style disc) ----
-    // outer dark rim
-    c.beginPath();
-    c.arc(0, 0, R, 0, Math.PI * 2);
-    c.fillStyle = PAL.accentOut;
-    c.fill();
-    // main coral body
-    c.beginPath();
-    c.arc(0, 0, R * 0.92, 0, Math.PI * 2);
-    c.fillStyle = this.full ? PAL.accentDk : PAL.accent;
-    c.fill();
-    // front bumper: darker arc hugging the top (forward = -Y) edge
-    c.beginPath();
-    c.arc(0, 0, R * 0.92, Math.PI * 1.15, Math.PI * 1.85);
-    c.strokeStyle = PAL.accentOut;
-    c.lineWidth = Math.max(2, R * 0.14);
-    c.stroke();
-    // front dome (roomba "eye" bump) just inside the top edge
-    c.beginPath();
-    c.arc(0, -R * 0.5, R * 0.34, 0, Math.PI * 2);
-    c.fillStyle = PAL.wall;
-    c.fill();
-    c.strokeStyle = PAL.accentHi;
-    c.lineWidth = Math.max(1, R * 0.05);
-    c.stroke();
-    // status LED on the dome (blue = ok, red = full)
-    c.beginPath();
-    c.arc(0, -R * 0.5, Math.max(1.5, R * 0.10), 0, Math.PI * 2);
-    c.fillStyle = this.full ? PAL.danger : PAL.blue;
-    c.fill();
-    // top highlight glint (upper-left, gives the disc some roundness)
+    c.restore();
+  }
+
+  // shared: the spinning side brushes in front of the body (heading 0 = -Y)
+  _drawBrushes(c, R, count) {
+    const bl = this.stats.brushLevel || 0;
+    if (bl <= 0 || count === 0) return;
+    const reach = R * (1.0 + 0.12 * bl);
+    const br = R * 0.42;
+    c.strokeStyle = PAL.gold;
+    c.lineWidth = Math.max(2, R * 0.10);
+    c.lineCap = 'round';
+    for (let i = 0; i < count; i++) {
+      const off = i === 0 ? -0.72 : 0.72;
+      const cx = Math.sin(off) * reach;
+      const cy = -Math.cos(off) * reach;
+      c.beginPath();
+      for (let k = 0; k < 3; k++) {
+        const a = this._brush + k * (Math.PI * 2 / 3);
+        c.moveTo(cx, cy);
+        c.lineTo(cx + Math.cos(a) * br, cy + Math.sin(a) * br);
+      }
+      c.stroke();
+    }
+    c.lineCap = 'butt';
+  }
+
+  // shared: top highlight glint for the round bodies
+  _drawGlint(c, R) {
     c.beginPath();
     c.arc(-R * 0.25, -R * 0.1, R * 0.45, 0, Math.PI * 2);
     c.fillStyle = 'rgba(255,255,255,0.10)';
     c.fill();
+  }
+
+  // ---- iRobot Roomba: classic red disc, front IR bump, two side brushes ----
+  _drawRoomba(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 2);
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.92, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // front bumper arc
+    c.beginPath(); c.arc(0, 0, R * 0.92, Math.PI * 1.15, Math.PI * 1.85);
+    c.strokeStyle = col.rim; c.lineWidth = Math.max(2, R * 0.14); c.stroke();
+    // front "eye" bump + status LED
+    c.beginPath(); c.arc(0, -R * 0.5, R * 0.34, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.05); c.stroke();
+    c.beginPath(); c.arc(0, -R * 0.5, Math.max(1.5, R * 0.10), 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.blue; c.fill();
+    // rear charge contacts (two little pads)
+    c.fillStyle = col.rim;
+    c.fillRect(-R * 0.22, R * 0.72, R * 0.16, R * 0.12);
+    c.fillRect(R * 0.06, R * 0.72, R * 0.16, R * 0.12);
+    this._drawGlint(c, R);
+  }
+
+  // ---- Xiaomi Mi: blue slim disc with a round LiDAR turret, two brushes ----
+  _drawMi(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 2);
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.94, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // LiDAR turret (rotates with the brush spin = it's spinning as it scans)
+    c.save();
+    c.translate(0, 0);
+    c.beginPath(); c.arc(0, 0, R * 0.46, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.05); c.stroke();
+    c.rotate(this._brush * 2);
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(R * 0.40, 0);
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.07); c.stroke();
+    c.beginPath(); c.arc(R * 0.40, 0, R * 0.08, 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.ok; c.fill();
     c.restore();
+    // slim front bumper strip
+    c.beginPath(); c.arc(0, 0, R * 0.94, Math.PI * 1.25, Math.PI * 1.75);
+    c.strokeStyle = col.rim; c.lineWidth = Math.max(2, R * 0.10); c.stroke();
+    this._drawGlint(c, R);
+  }
+
+  // ---- Shark: purple disc, big rear suction port, single brush, "hopper" band ----
+  _drawShark(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 1);
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.94, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // "self-empty hopper" band across the middle (darker ring segment)
+    c.beginPath(); c.arc(0, 0, R * 0.94, -0.5, 0.5);
+    c.lineTo(0, 0); c.closePath();
+    c.fillStyle = col.rim; c.globalAlpha = 0.35; c.fill(); c.globalAlpha = 1;
+    // big round suction port at the back (it faces the way it came from)
+    c.beginPath(); c.arc(0, R * 0.42, R * 0.40, 0, Math.PI * 2);
+    c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.06); c.stroke();
+    c.beginPath(); c.arc(0, R * 0.42, R * 0.16, 0, Math.PI * 2);
+    c.fillStyle = col.domeHi; c.fill();
+    // small front sensor eye
+    c.beginPath(); c.arc(0, -R * 0.62, R * 0.16, 0, Math.PI * 2);
+    c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.04); c.stroke();
+    c.beginPath(); c.arc(0, -R * 0.62, Math.max(1, R * 0.07), 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.blue; c.fill();
+    this._drawGlint(c, R);
   }
 }

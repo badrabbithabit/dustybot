@@ -66,6 +66,8 @@ writeSave(save);
 
 // ---- UI wiring ----
 const $ = id => document.getElementById(id);
+$('btn-select').onclick = () => { Audio.sfx.click(); game.showSelect(); };
+$('btn-back-select').onclick = () => { Audio.sfx.click(); game.toMenu(); };
 $('btn-start').onclick = () => {
   try { Audio.resumeAudio(); Audio.sfx.click(); game.newRun(); }
   catch (e) { __showErr('btn-start', e); throw e; }

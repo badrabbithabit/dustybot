@@ -3,14 +3,14 @@
 // Each level: fixed obstacles + a FIXED set of themed dirt scattered at start
 // (no regen); the dirt count scales with the level number. Clear a level by
 // vacuuming every mote, then pick 1 of 3 upgrades. NO failure mode.
-import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal } from './upgrades.js';
+import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal, BOTS } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
 import { Controls } from './controls.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
 
-const SCREENS = ['screen-menu', 'screen-hangar', 'screen-over'];
+const SCREENS = ['screen-menu', 'screen-hangar', 'screen-select', 'screen-over'];
 
 export class Game {
   constructor(world, save) {
@@ -21,6 +21,7 @@ export class Game {
     this.state = 'menu';
     this.bot = null;
     this.stats = null;
+    this.selectedBot = (save && save.bot) || 'roomba';
     this.level = 1;
     this.time = 0;            // total run time
     this._frac = 0;
@@ -37,8 +38,23 @@ export class Game {
     this.controls.onJoyChange = () => { this._tapInput = null; };
   }
 
+  showSelect() {
+    const onPick = (id) => {
+      this.selectedBot = id;
+      this.save.bot = id;
+      this.save.lastSeen = Date.now();
+      this.onSave && this.onSave();
+      Audio.sfx.click();
+      UI.buildBots(this.save, this.selectedBot, onPick);
+    };
+    UI.showAll(SCREENS, 'screen-select');
+    UI.hide('hud'); UI.hide('joy');
+    UI.hideLevelIntro();
+    UI.buildBots(this.save, this.selectedBot, onPick);
+  }
+
   newRun() {
-    this.stats = makeRunStats(this.save.meta);
+    this.stats = makeRunStats(this.save.meta, this.selectedBot);
     this.time = 0;
     this.level = 1;
     this._frac = 0;

@@ -28,6 +28,53 @@ export const BALANCE = {
   dock: { x: 22, y: 3.6, triggerR: 1.9 },
 };
 
+// ---------------- Character select: 3 bots based on real robot vacuums ----------------
+// `stats` are the STARTING run stats for that bot (meta upgrades still multiply on top
+// in makeRunStats, as before). Each bot has its own canvas-drawn look (see bot.js)
+// and its own color set.
+export const BOTS = {
+  // iRobot Roomba — classic round disc, two counter-rotating side brushes,
+  // red body, front IR "eye" bump. All-rounder: balanced, reliable.
+  roomba: {
+    name: 'ROOMBA', icon: '🔴', shape: 'round',
+    sub: 'iRobot classic · all-rounder',
+    blurb: 'Balanced. Reliable. The one that started it all.',
+    colors: { rim: '#4d1f1a', body: '#ff6b57', bodyDk: '#c23c2c', dome: '#241a17', domeHi: '#ffab8f' },
+    stats: {
+      suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 2,
+      speed: 6.0, turnRate: 5.0, magnetRange: 0.0,
+      binMax: 100, boostCdMult: 1.0, shardMult: 1.0,
+    },
+  },
+  // Xiaomi Mi Robot — slim disc with a single round LiDAR turret on top,
+  // two side brushes, blue body. Faster + better turn rate + bigger bin.
+  mi: {
+    name: 'MI ROBOT', icon: '🔵', shape: 'lidar',
+    sub: 'Xiaomi Mi · LiDAR scout',
+    blurb: 'Quick, nimble, and its LiDAR sees around corners. Big hopper.',
+    colors: { rim: '#12304d', body: '#5cc8ff', bodyDk: '#1f5f8a', dome: '#0e1a28', domeHi: '#a8e6ff' },
+    stats: {
+      suction: 0.9, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 1,
+      speed: 7.2, turnRate: 6.4, magnetRange: 0.6,
+      binMax: 130, boostCdMult: 1.0, shardMult: 1.0,
+    },
+  },
+  // Shark robot vacuum — tall disc with a big round suction port and
+  // "self-empty" hopper, purple body. High suction, slower, smaller bin.
+  shark: {
+    name: 'SHARK', icon: '🟣', shape: 'shark',
+    sub: 'Shark · self-empty powerhead',
+    blurb: 'Brutal suction and a sticky magnet. But slow, and the hopper is tiny.',
+    colors: { rim: '#2c1447', body: '#c07bff', bodyDk: '#7a3fae', dome: '#190c28', domeHi: '#dcb9ff' },
+    stats: {
+      suction: 1.3, suctionRange: 4.2, pickupRadius: 1.9, brushLevel: 1,
+      speed: 5.1, turnRate: 4.0, magnetRange: 1.6,
+      binMax: 70, boostCdMult: 0.85, shardMult: 1.0,
+    },
+  },
+};
+export const BOT_ORDER = ['roomba', 'mi', 'shark'];
+
 // ---------------- In-run upgrades (1 of 3 picks on level-up) ----------------
 export const RUN_UPGRADES = [
   { id: 'suction', name: 'Suction Core', icon: '🌀', max: 5, weight: 3,
@@ -82,16 +129,20 @@ export const META_UPGRADES = [
     desc: lvl => `+6% suction range (L${lvl})` },
 ];
 
-// Build the run stats object (what upgrades mutate) from meta levels.
-export function makeRunStats(meta) {
+// Build the run stats object (what upgrades mutate) from meta levels + chosen bot.
+export function makeRunStats(meta, botId) {
   const L = id => meta[id] || 0;
+  const bot = BOTS[botId] || BOTS.roomba;
+  const b = bot.stats;
   const s = {
-    suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 0,
-    speed: BALANCE.bot.speed, turnRate: BALANCE.bot.turnRate,
-    magnetRange: 0.0,
-    binMax: BALANCE.bin.max,
-    boostCdMult: 1.0,
-    shardMult: 1.0,
+    bot: botId,
+    suction: b.suction, suctionRange: b.suctionRange, pickupRadius: b.pickupRadius,
+    brushLevel: b.brushLevel,
+    speed: b.speed, turnRate: b.turnRate,
+    magnetRange: b.magnetRange,
+    binMax: b.binMax,
+    boostCdMult: b.boostCdMult,
+    shardMult: b.shardMult,
     goldChance: BALANCE.dirt.goldChance,
     spawnMult: 1.0,
     // run accumulators (not from upgrades)
