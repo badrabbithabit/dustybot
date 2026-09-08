@@ -41,7 +41,7 @@ export const BOTS = {
     blurb: 'Balanced. Reliable. The one that started it all.',
     colors: { rim: '#4d1f1a', body: '#ff6b57', bodyDk: '#c23c2c', dome: '#241a17', domeHi: '#ffab8f' },
     stats: {
-      suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 2,
+      suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 0,
       speed: 6.0, turnRate: 5.0, magnetRange: 0.0,
       binMax: 100, boostCdMult: 1.0, shardMult: 1.0,
     },
@@ -54,7 +54,7 @@ export const BOTS = {
     blurb: 'Quick, nimble, and its LiDAR sees around corners. Big hopper.',
     colors: { rim: '#12304d', body: '#5cc8ff', bodyDk: '#1f5f8a', dome: '#0e1a28', domeHi: '#a8e6ff' },
     stats: {
-      suction: 1.0, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 1,
+      suction: 1.0, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 0,
       speed: 7.2, turnRate: 6.4, magnetRange: 0.6,
       binMax: 130, boostCdMult: 1.0, shardMult: 1.0,
     },
@@ -67,7 +67,7 @@ export const BOTS = {
     blurb: 'Brutal suction, and a magnet that sings once upgraded. But slow, and the hopper runs full fast.',
     colors: { rim: '#2c1447', body: '#c07bff', bodyDk: '#7a3fae', dome: '#190c28', domeHi: '#dcb9ff' },
     stats: {
-      suction: 1.3, suctionRange: 4.2, pickupRadius: 1.9, brushLevel: 1,
+      suction: 1.3, suctionRange: 4.2, pickupRadius: 1.9, brushLevel: 0,
       speed: 5.1, turnRate: 4.0, magnetRange: 1.6,
       binMax: 90, boostCdMult: 0.85, shardMult: 1.0,
     },
@@ -81,9 +81,9 @@ export const RUN_UPGRADES = [
     desc: lvl => `+20% suction & range, +5 bin (L${lvl})`,
     apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.5; s.binMax += 5; } },
   { id: 'brush', name: 'Turbo Brush', icon: '🪥', max: 5, weight: 3,
-    desc: lvl => `Brush grows, +20% pickup (L${lvl})`,
-    // ADDITIVE: bot bases differ (Roomba starts at brushLevel 2) so an
-    // absolute `= n` would have DOWNGRADED it on the first pick.
+    desc: lvl => lvl <= 1 ? `Adds a side brush (L1)` : `Brush grows, +20% pickup (L${lvl})`,
+    // No bot ships with a brush — this IS the side-brush upgrade path:
+    // L1 adds it, L2+ grows it (+20% pickup). Additive = pick count, capped 5.
     apply: (s) => {
       s.brushLevel = Math.min(5, (s.brushLevel || 0) + 1);
       if (s.brushLevel >= 2) s.pickupRadius *= 1.2;

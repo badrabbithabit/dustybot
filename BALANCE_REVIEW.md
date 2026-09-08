@@ -322,3 +322,17 @@ Re-ran `node tools/sim-bots.mjs`:
   optional `suctionRange 4.2→3.8` cap to try in playtest.
 - Base "fails" (2 Roomba / 3 Mi / 8 Shark) are all the sim-AI deflection
   oscillation (traced in §1), not game soft-locks.
+
+## 10. Follow-up: side brush moved into the upgrade path
+
+Design decision after the rebalance: bots no longer *ship* with a side brush
+(`brushLevel` base 2/1/1 → **0/0/0** for Roomba/Mi/Shark). Turbo Brush is now
+the sole source — L1 adds the brush, L2+ grows it (+20% pickup per pick from
+L2, capped at L5). `Bot._drawBrushes` already returns early at `brushLevel 0`,
+so the brush visually appears on the sprite the moment it's picked.
+
+Sim impact: small. Base clear ≈ unchanged (Roomba 65.8 s, Mi 70.1 s — its L1
+brush was worth ~4 s, Shark 95.1 s). Maxed per-successful-run: Roomba ~14.3 s,
+Mi ~14.4 s, Shark ~10.2 s (all end at brushLevel 5 with 4 pickup bonuses —
+the original intended count; the interim additive fix had accidentally handed
+out a 5th). `npm test` 9/9.

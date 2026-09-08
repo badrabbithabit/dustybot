@@ -55,17 +55,17 @@ test('applyPick: respects max level and mutates stats', () => {
   assert.equal(applyPick(s, 'nope'), false, 'unknown id is a no-op');
 });
 
-test('Turbo Brush is additive and never downgrades (B3 regression)', () => {
-  // Roomba starts at brushLevel 2; the old absolute `= n` set it back to 1
-  // on the first pick.
+test('Turbo Brush: side brush is an upgrade path (bots start brushless)', () => {
+  for (const b of BOT_ORDER)
+    assert.equal(fresh(b).brushLevel, 0, `${b} starts without a side brush`);
   const r = fresh('roomba');
   const pickup0 = r.pickupRadius;
   assert.ok(applyPick(r, 'brush'));
-  assert.equal(r.brushLevel, 3, 'Roomba L2 -> L3, not a downgrade to L1');
-  assert.ok(r.pickupRadius > pickup0, 'pickup bonus still applies at >=L2');
-  const m = fresh('mi');                       // starts at brushLevel 1
-  assert.ok(applyPick(m, 'brush'));
-  assert.equal(m.brushLevel, 2, 'Mi L1 -> L2');
+  assert.equal(r.brushLevel, 1, 'first pick adds the side brush');
+  assert.equal(r.pickupRadius, pickup0, 'L1 grants no pickup bonus');
+  assert.ok(applyPick(r, 'brush'));
+  assert.equal(r.brushLevel, 2);
+  assert.ok(r.pickupRadius > pickup0, 'L2+ grants the +20% pickup bonus');
   const s = fresh('mi');
   for (let i = 0; i < 10; i++) applyPick(s, 'brush');
   assert.equal(s.brushLevel, 5, 'capped at brushLevel 5');
