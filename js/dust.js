@@ -20,9 +20,10 @@ export class DustSystem {
   get count() { return this.items.length; }
 
   // Scatter `count` themed motes at open (non-obstacle, non-dock) floor spots.
-  spawnLevel(count, theme) {
+  spawnLevel(count, theme, stats) {
     this.reset();
     this.theme = theme;
+    this._stats = stats || null;   // gold chance (meta + upgrades) applies from level 1
     for (let i = 0; i < count; i++) this._spawnOne();
   }
 
@@ -67,13 +68,17 @@ export class DustSystem {
     const W = this.world.W, H = this.world.H;
     const pickupR = stats.pickupRadius;
     const canVacuum = !bot.full;
-    const suckR = canVacuum ? stats.suctionRange * stats.suction : 0;
+    // suction reach = suctionRange scaled by suction power. Now actually used:
+    // per-bot range identity + Suction Core + Mote Magnet all take effect
+    // (previously suction only ever reached pickupR + 1 and suckR was dead).
+    const suckR = canVacuum ? Math.max(pickupR + 0.5, stats.suctionRange * stats.suction) : 0;
     const clogMult = canVacuum ? 1 : BALANCE.bin.clogSuctionMult;
+    const brushLvl = (bot.stats && bot.stats.brushLevel) || 0;
 
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
       // corner-brush sweep (spins motes inward from all sides)
-      const sw = bot.brushLevel > 0 ? bot.brushSweep(it.x, it.y, dt, bot.brushLevel) : null;
+      const sw = brushLvl > 0 ? bot.brushSweep(it.x, it.y, dt, brushLvl) : null;
       if (sw) { it.vx += sw.x; it.vy += sw.y; }
       // drift
       it.x += it.vx * dt; it.y += it.vy * dt;
@@ -85,9 +90,8 @@ export class DustSystem {
       // no directional cone. Strongest near the body, fading to zero at range.
       const dx = bot.x - it.x, dy = bot.y - it.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < pickupR + 1) {
-        const reach = pickupR + 1;
-        const f = 1 - dist / reach;
+      if (dist < suckR) {
+        const f = 1 - dist / suckR;
         const force = f * f * 34 * stats.suction * clogMult;
         it.vx += dx / (dist + 0.001) * force * dt * 6;
         it.vy += dy / (dist + 0.001) * force * dt * 6;
@@ -112,7 +116,7 @@ export class DustSystem {
   }
 
   _collected(it, bot, stats, cb) {
-    bot.addDust(1, it._xp);
+    bot.addDust(1);
     const gained = it.val;
     if (it.type === 'gold') cb.onGold && cb.onGold();
     else cb.onSuck && cb.onSuck(it.type);

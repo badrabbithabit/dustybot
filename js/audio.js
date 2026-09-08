@@ -48,16 +48,11 @@ export const sfx = {
     lastSuck = now;
     blip(180 + Math.random() * 120, 0.08, 'triangle', 0.15, 140);
   },
-  bigSuck() { blip(120, 0.16, 'sawtooth', 0.25, 220); noise(0.12, 0.12, 600); },
   gold() { blip(880, 0.12, 'sine', 0.3, 440); setTimeout(() => blip(1320, 0.18, 'sine', 0.25, 220), 80); },
-  hurt() { blip(220, 0.25, 'square', 0.3, -140); noise(0.2, 0.2, 300); },
-  life() { blip(440, 0.15, 'sine', 0.3, 220); },
   clear() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => blip(f, 0.18, 'triangle', 0.28), i * 90)); },
   buy() { blip(660, 0.1, 'triangle', 0.25, 110); },
   upgrade() { [392, 523, 659].forEach((f, i) => setTimeout(() => blip(f, 0.14, 'triangle', 0.26), i * 70)); },
   click() { blip(520, 0.05, 'square', 0.12); },
-  over() { [330, 262, 196, 131].forEach((f, i) => setTimeout(() => blip(f, 0.3, 'triangle', 0.28), i * 160)); },
   boost() { noise(0.25, 0.15, 1200); blip(90, 0.25, 'sawtooth', 0.12, 60); },
-  pad() { blip(523, 0.1, 'sine', 0.2); setTimeout(() => blip(784, 0.15, 'sine', 0.2), 90); },
   dump() { noise(0.25, 0.2, 400); blip(150, 0.2, 'triangle', 0.2, -60); },
 };

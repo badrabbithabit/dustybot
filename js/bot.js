@@ -15,7 +15,6 @@ export class Bot {
     this.heading = 0;
     this.vx = 0; this.vy = 0;
     this.bin = 0;
-    this._dumpXp = 0;
     this.full = false;
     this.boostCd = 0;
     this.boosting = false;
@@ -32,10 +31,11 @@ export class Bot {
     this._shadow = null;
   }
 
-  addDust(n, xp) {
+  addDust(n) {
     this.bin = Math.min(this.stats.binMax, this.bin + n);
-    this._dumpXp = (this._dumpXp || 0) + (xp || 0);
-    this.full = this.bin >= BALANCE.bin.fullAt;
+    // full at THIS bot's capacity (was: hardcoded fullAt=100, so Shark (70)
+    // never clogged and Mi (130) clogged early)
+    this.full = this.bin >= this.stats.binMax;
   }
 
   // Advance one axis, stopping at the first collision (bounds or obstacle) so
@@ -76,7 +76,7 @@ export class Bot {
   update(dt, input) {
     if (!this.alive) return;
     const s = this.stats;
-    this.full = this.full && this.bin >= BALANCE.bin.fullAt;
+    this.full = this.full && this.bin >= this.stats.binMax;
 
     // steering input
     let ix = input.x, iy = input.y;
@@ -160,7 +160,6 @@ export class Bot {
     // (sweeps dust IN toward the body instead of flinging it off)
     const spin = mag > 0 ? (this.boosting ? 30 : 14) : 2;
     this._brush -= dt * spin;
-    return { moving: mag > 0.1, speed };
   }
 
   // Corner-brush sweep: motes within `reach` of the body (all around, since the

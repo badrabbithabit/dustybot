@@ -6,11 +6,9 @@ export class Controls {
   constructor(canvas) {
     this.canvas = canvas;
     this.joy = { x: 0, y: 0, active: false };      // -1..1
-    this.tapTarget = null;                          // world point {x, z}
     this.boost = false;
     this.onTap = null;                              // callback(worldPoint)
     this.onJoyChange = null;
-    this.raycaster = null;
     this._joyTouch = null;
     this._knobHome = null;
     this._knobEl = document.getElementById('joy-knob');
@@ -66,7 +64,6 @@ export class Controls {
         this.joy.x = Math.cos(a);
         this.joy.y = Math.sin(a);   // screen dir, +y = finger up
         this.joy.active = true;
-        this.tapTarget = null;
         this.onJoyChange && this.onJoyChange(this.joy.x, this.joy.y);
       }
     }
@@ -97,10 +94,7 @@ export class Controls {
     // tap-to-move: convert to world via provided callback (world.js registers it)
     if (this.onTap) {
       const world = this.onTap(pt.x, pt.y);
-      if (world) {
-        this.tapTarget = world;
-        if (e.cancelable) e.preventDefault();
-      }
+      if (world && e.cancelable) e.preventDefault();
     }
   }
 

@@ -64,6 +64,10 @@ const game = new Game(world, save);
 game.onSave = () => writeSave(save);
 writeSave(save);
 
+// persist when the tab goes away so mid-run banked shards / best stats survive a refresh
+addEventListener('pagehide', () => writeSave(save));
+document.addEventListener('visibilitychange', () => { if (document.hidden) writeSave(save); });
+
 // ---- UI wiring ----
 const $ = id => document.getElementById(id);
 $('btn-select').onclick = () => { Audio.sfx.click(); game.showSelect(); };
@@ -74,8 +78,6 @@ $('btn-start').onclick = () => {
 };
 $('btn-hangar').onclick = () => { Audio.sfx.click(); game.showHangar(); };
 $('btn-back-menu').onclick = () => { Audio.sfx.click(); game.toMenu(); };
-$('btn-retry').onclick = () => { Audio.sfx.click(); game.newRun(); };
-$('btn-over-menu').onclick = () => { Audio.sfx.click(); game.showHangar(); };
 $('btn-mute').onclick = () => {
   const m = !Audio.isMuted();
   Audio.setMuted(m);
@@ -96,7 +98,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
-  world.render(dt, game);
+  world.render(game);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

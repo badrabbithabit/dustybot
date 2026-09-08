@@ -222,11 +222,3 @@ export function buildBots(save, selectedId, onPick) {
   }
 }
 
-export function setOver(state) {
-  $('over-title').textContent = 'BURIED';
-  $('over-stats').innerHTML =
-    `reached level <b>${state.level}</b><br>` +
-    `survived <b>${fmtTime(state.time)}</b><br>` +
-    `dust collected: <b>${Math.floor(state.dust)}</b>`;
-  $('over-shards').textContent = `+${state.shardsGained} ✦ banked`;
-}

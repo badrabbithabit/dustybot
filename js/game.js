@@ -4,14 +4,14 @@
 // (no regen); the dirt count scales with the level number. Clear a level by
 // vacuuming every mote AND dumping it all at the dock, then pick 1 of 3
 // upgrades. NO failure mode.
-import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal, BOTS } from './upgrades.js';
+import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
 import { Controls } from './controls.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
 
-const SCREENS = ['screen-menu', 'screen-hangar', 'screen-select', 'screen-over'];
+const SCREENS = ['screen-menu', 'screen-hangar', 'screen-select'];
 
 export class Game {
   constructor(world, save) {
@@ -55,6 +55,8 @@ export class Game {
   }
 
   newRun() {
+    this.save.runs = (this.save.runs || 0) + 1;   // count runs actually started
+    this.onSave && this.onSave();
     this.stats = makeRunStats(this.save.meta, this.selectedBot);
     this.time = 0;
     this.level = 1;
@@ -88,9 +90,8 @@ export class Game {
 
     // scatter the level's fixed themed dirt (does not regenerate)
     this._levelDirtTotal = def.dirtCount;
-    this.stats.dirtCollected = 0;
     this._cleared = 0;   // reset the dumped-dirt counter for this level
-    this.dust.spawnLevel(def.dirtCount, def.theme);
+    this.dust.spawnLevel(def.dirtCount, def.theme, this.stats);
 
     this.state = 'intro';
     this._introTimer = 1.6;
@@ -124,7 +125,7 @@ export class Game {
     this.dust.update(dt, this.bot, this.stats, {
       onSuck: () => Audio.sfx.suck(),
       onGold: () => Audio.sfx.gold(),
-      onCollect: (v, it) => this._onCollect(v, it),
+      onCollect: (v) => this._onCollect(v),
     });
 
     // bin-full nudge (bin still caps suction; there is no dirt-death)
@@ -144,7 +145,6 @@ export class Game {
       const v = this.bot.dumpBin();
       this._cleared = Math.min(this._levelDirtTotal, this._cleared + v);
       Audio.sfx.dump();
-      this.bot._dumpXp = 0;
       UI.toast(`Bin dumped — ${v} motes`, 'good');
     }
 
@@ -169,16 +169,20 @@ export class Game {
     if (btn) btn.classList.toggle('cooling', this.bot.boostCd > 0);
   }
 
-  _onCollect(val, it) {
-    this.stats.dust += 1;
-    this.stats.dirtCollected += 1;
+  _onCollect(val) {
+    this.stats.dust += val;   // count dust VALUE (gold = 2), not motes
     this._bankShards(val * BALANCE.shardPerDust * this.stats.shardMult);
   }
 
   _levelClear() {
+    // fastest level-1 clear is the menu "best" time
+    if (this.level === 1 && (!this.save.bestTime || this.time < this.save.bestTime)) {
+      this.save.bestTime = this.time;
+    }
     Audio.sfx.clear();
     UI.toast(`Level ${this.level} clear!`, 'good');
     this._bankShards(BALANCE.shardPerLevel);
+    this.onSave && this.onSave();   // persist best stats + banked shards
     this._showPick();
   }
 
@@ -189,14 +193,24 @@ export class Game {
       this._frac -= whole;
       this.stats.shardsEarned += whole;
       this.save.shards += whole;
+      if (this.stats.shardsEarned > (this.save.bestShards || 0)) this.save.bestShards = this.stats.shardsEarned;
     }
   }
 
   _showPick() {
     // show the 1-of-3 upgrade pick at the END of a cleared level
     this.state = 'pick';
-    document.getElementById('pick-title').textContent = `LEVEL ${this.level} CLEAR`;
     const picks = rollPicks(this.stats);
+    if (!picks.length) {
+      // every run upgrade is maxed — bank a bonus and keep rolling
+      const bonus = 5 + this.level;
+      this._bankShards(bonus);
+      Audio.sfx.upgrade();
+      UI.toast(`All upgrades maxed — +${bonus} ✦ bonus`, 'good');
+      this.loadLevel(this.level + 1);
+      return;
+    }
+    document.getElementById('pick-title').textContent = `LEVEL ${this.level} CLEAR`;
     UI.buildPicks(picks, this.stats, id => {
       Audio.sfx.upgrade();
       applyPick(this.stats, id);
@@ -213,12 +227,14 @@ export class Game {
     UI.hide('hud'); UI.hide('joy');
     UI.hideLevelIntro();
     UI.showAll(SCREENS, 'screen-menu');
+    const offline = this.save._offlineGain || 0;
+    this.save._offlineGain = 0;   // toast once per session, not on every menu visit
     UI.setMenu({
       shards: this.save.shards,
       bestTime: this.save.bestTime || 0,
       runs: this.save.runs,
       bestShards: this.save.bestShards || 0,
-      offline: this.save._offlineGain || 0,
+      offline,
     });
   }
 

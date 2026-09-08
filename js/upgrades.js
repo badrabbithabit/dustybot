@@ -10,8 +10,8 @@
 
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
-  bot: { radius: 1.0, speed: 6.0, boostMult: 1.7, turnRate: 5.0, boostCd: 4.0, boostCdFloor: 1.0 },
-  bin: { max: 100, fullAt: 100, clogSuctionMult: 0.5, clogWeightMult: 1.25 },
+  bot: { radius: 1.0, boostMult: 1.7, boostCd: 4.0, boostCdFloor: 1.0 },
+  bin: { clogSuctionMult: 0.5, clogWeightMult: 1.25 },
   dirt: {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
@@ -144,9 +144,8 @@ export function makeRunStats(meta, botId) {
     boostCdMult: b.boostCdMult,
     shardMult: b.shardMult,
     goldChance: BALANCE.dirt.goldChance,
-    spawnMult: 1.0,
     // run accumulators (not from upgrades)
-    dust: 0, bin: 0, dirtCollected: 0, level: 1, shardsEarned: 0,
+    dust: 0, level: 1, shardsEarned: 0,
   };
   s.suction *= Math.min(3, 1 + 0.05 * L('meta_suction'));
   s.speed *= 1 + 0.04 * L('meta_speed');
@@ -170,13 +169,14 @@ export function rollPicks(s, count = 3) {
     for (let i = 0; i < u.weight; i++) pool.push(u);
   }
   const picks = [];
-  const used = new Set();
   while (picks.length < count && pool.length) {
     const i = Math.floor(Math.random() * pool.length);
     const u = pool[i];
-    if (used.has(u.id)) continue;
-    used.add(u.id);
     picks.push(u);
+    // remove ALL copies of this id so the loop always makes progress
+    // (old code `continue`d on seen ids -> infinite loop when fewer than
+    // `count` distinct upgrades remained)
+    for (let j = pool.length - 1; j >= 0; j--) if (pool[j].id === u.id) pool.splice(j, 1);
   }
   return picks;
 }

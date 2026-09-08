@@ -1,180 +1,222 @@
-# Dusty Bot — 3D Roguelike Robot Vacuum Simulator
+# Dusty Bot — 2D Roguelike Robot Vacuum
 
 Web-based, mobile-first (phone portrait), hosted on GitHub Pages.
-You are a little roomba in a room full of dust and detritus. Vacuum it up,
-survive the room, pick upgrades, get deeper. Run ends when you run out of
-lives. Meta-currency ("Dust Shards") persists between runs for permanent
-upgrades.
+You are a little robot vacuum in a top-down 2D room full of dust. Vacuum
+everything, dump your bin at the dock, pick 1 of 3 upgrades, go deeper.
+There is **no failure mode** — a run ends when you walk away. A persistent
+meta-currency ("Dust Shards" ✦) carries between runs for permanent upgrades,
+plus a small offline trickle (gated behind a meta unlock).
 
-## 1. Core loop (rooms = levels, life system)
+> This doc specs the **shipped implementation** (2D canvas). An earlier draft
+> described a 3D/Three.js game with lives, battery and hazards — that design
+> was dropped before launch; everything below matches `js/` as committed.
+
+## 1. Core loop (level-based, no failure)
 
 ```
-[Menu] -> [Room 1] -> (clear room) -> [Pick 1 of 3 upgrades] -> [Room 2] -> ...
-                |
-                +-- take 3 hits (hazards) or battery dies -> [Run over] -> [Dust Shards kept] -> [Menu]
+[Menu] -> [Select bot] -> [Level 1 intro] -> PLAY -> level clear
+                                             |        ^
+                                             v        |
+                                        [Pick 1 of 3 upgrades]
+                                             (repeat; themes rotate every 3 levels)
 ```
 
-- A **room** is cleared when you vacuum up its **dust budget** (the room's
-  total spawnable dust value, e.g. 100 + 20*room).
-- **Lives = 3.** Hazards cost a life and grant 2s of invulnerability.
-- **Battery:** drains while moving (faster when boosting). Empty battery =
-  the bot can't move and slowly takes "overload" damage (half-life per 2s
-  until a life is lost). Charging pads on the floor restore battery.
-- **Dust economy:** small dust = 1 pt, debris (crumbs, hair, pebbles) = 2-5,
-  golden dust = 10. Vacuumed dust is **run currency** (buy in-room powerups)
-  and also converts to **Dust Shards** (meta currency, 1 shard per 10 dust,
-  banked at run end + per-room bonus).
-- **Room clear bonus:** +room number shards, battery refill, short heal (1 life,
-  capped at 3).
-- Difficulty scales per room: more dust density, more hazards, faster dust
-  spawn ("dust comes in" — dust keeps drifting/spawning through the room,
-  some from vents on the walls).
+- A **level** is one named room with a **fixed dirt budget** scattered at
+  start. Motes do **not** regenerate. Clear the level by collecting every mote.
+- On clear: +2 ✦ level bonus, then a 1-of-3 upgrade pick, then the next level.
+  When the upgrade pool is empty (all maxed), a bonus of `5 + level` ✦ is
+  banked and the run just keeps going.
+- **The bin & the dock.** Motes you collect go into the bin. When
+  `bin >= binMax` the bot **clogs**: suction is fully off and speed is
+  ÷1.25 (`BALANCE.bin.clogWeightMult`). The side brushes, magnet and
+  touch-pickup still work, so a clogged bot can still finish a level — slowly.
+  Drive over the **dock** (glowing ring, top-center) to dump the bin.
+- **Difficulty ramp:** dirt count per level
+  `min(160, 26 + (level-1)*6 + rotations*12)` (`BALANCE.dirt`), and themes
+  cycle residential → office → store → space, 3 named rooms each, ramping
+  every full rotation.
 
-### Hazards (things that cost lives)
-- **Fan/vent hazards** (spinning floor fans that knock the bot back + damage).
-- **Cable tangles** (static, slow + small damage on touch).
-- **Hazmat dust piles** (glowing green dust; vacuuming it normally is fine
-  but if the bot is "full" — see bin below — it splashes and damages).
-- **Battery drain mines** (invisible-ish; instantly drains 20% battery).
-- Late rooms add **roomba rivals** (AI bots that eat dust before you — soft
-  hazard, steals economy).
+### Dust economy
+- Mote types (spawn roll, `dust.js`): **dust** = 1 (common), **big** = 3,
+  **debris** = 2, **gold** = 5 (chance `3% + upgrades`, see Gold Bristles /
+  Lucky Bristles).
+- Every mote collected banks `value * 0.05 * shardMult` ✦ (fractional parts
+  accumulate in an accumulator; whole shards go to the save instantly).
+- Passive trickle: `0.05 ✦/s * shardMult` while a level is being played.
+- Level clear: +2 ✦.
+- **Offline** (requires Auto-Pilot Sensor meta): on load,
+  `shards += floor(0.8/h * (1 + 0.05*polisherLvl) * min(elapsed, 8h))`,
+  granted only after ≥60s away, surfaced as a one-time "while you were away"
+  toast. Deliberately slow: AFK is a drip, active play is the real economy.
 
-### The "dust comes in" flavor
-Wall vents spawn drifting dust motes on a timer (rate scales with room).
-A **dust bin** fills as you vacuum: at 100% the bot **stops vacuuming
-entirely** (suction off) and slows down, until you dump it at the **dock**
-(trash-can pad in the top-middle). Dumping converts bin contents to XP
-(1 XP per mote) — the only reward, no shards. Risk loop: hoard dust for
-bigger XP dumps, or keep the bin light to avoid losing vacuum time.
+## 2. Bots (character select)
 
-## 2. Controls (both, per user request)
+Three bots modeled on real robot vacuums. Stats are the **run starting
+values**; meta upgrades multiply on top (`makeRunStats`).
 
-- **Virtual joystick** (left thumb zone): drag to steer the bot directly.
-- **Tap-to-move** (anywhere on the floor): bot pathfinds straight (with
-  obstacle slide) to the tapped point. Joystick input cancels tap-targeting.
-- **Boost button** (right side, hold): 2x speed, 3x battery drain, short
-  cooldown. Boost also pulls dust from slightly farther (fun button).
-- Camera: fixed 3/4 top-down-ish angle (like a tilted roomba-cam), follows
-  the bot, locked rotation. No free camera (mobile-friendly).
-- Keyboard fallback for desktop testing: WASD/arrows + space (boost),
-  mouse click = tap-to-move.
-
-## 3. Upgrade paths
-
-Two layers:
-
-### A. In-run upgrades (roguelike picks — 1 of 3 after each room)
-Picked from a weighted pool; each has max levels. Powerups are **additive
-stacks within a run** (roguelike "build" feeling).
-
-| Upgrade | Effect per level | Max |
-|---|---|---|
-| **Suction Core** | +20% suction strength & range; +5 max bin | 5 |
-| **Turbo Brush** (side brushes) | +15% pickup radius, brushes spin visibly | 5 |
-| **Speed Coil** | +10% move speed, +10% turn rate | 5 |
-| **Battery Cell** | +25% max battery, -5% drain | 5 |
-| **Magnet Motor** | +15% dust pull-in distance (passive vacuum radius) | 3 |
-| **Nano Shield** | +1 max life (up to 5), heals 1 on pickup | 2 |
-| **Overdrive** | Boost cooldown -20%, boost pulls 2x harder | 3 |
-| **Scrap Merchant** | +15% dust->shard conversion | 3 |
-| **Vents** (rare) | A wall vent becomes a **charger** | 1 |
-| **Junk Filter** (rare) | Hazmat dust gives +50% value, no splash | 1 |
-
-Weights: common (suction/brush/speed/battery) w=3, uncommon (magnet/overdrive/
-merchant) w=2, rare (vents/junk filter/shield) w=1. Never offer a pick at
-its max level.
-
-### B. Meta upgrades (Dust Shards, persist forever — the AFK/slow path)
-Bought in the hangar (menu) screen. Cost scaling: `cost = base * 1.6^level`.
-
-| Upgrade | Base cost | Effect per level | Max |
+| | **ROOMBA** 🔴 all-rounder | **MI ROBOT** 🔵 LiDAR scout | **SHARK** 🟣 self-empty powerhead |
 |---|---|---|---|
-| **Factory Suction** | 20 | +5% suction (multiplicative across levels, capped x3 total) | 10 |
-| **Chassis Rollers** | 20 | +4% move speed | 10 |
-| **Deep Battery** | 30 | +6% max battery | 10 |
-| **Magnet Coil** | 40 | +4% pickup radius | 8 |
-| **Reinforced Frame** | 50 | Start each run with +1 shield charge (absorbs 1 hit, up to +2) | 3 |
-| **Auto-Pilot Sensor** | 100 | While AFK/idle, bot auto-vacuums (see offline) | 1 (gate) |
-| **Shard Polisher** | 60 | +3% shard gains | 10 |
-| **Lucky Bristles** | 200 | 5% +15% per level golden dust chance | 5 |
-| **Starting Heads** | 150 | +1 starting life (max +1) | 1 |
-| **Pre-Cleaned Rooms** | 250 | Rooms start 10% less hazardous (hazard density -10%/lvl) | 5 |
+| suction | 1.0 | 0.9 | **1.3** |
+| suction range | 3.4 | 3.0 | **4.2** |
+| pickup radius | 1.7 | 1.5 | **1.9** |
+| brush level | **2** | 1 | 1 |
+| speed | 6.0 | **7.2** | 5.1 |
+| turn rate | 5.0 | **6.4** | 4.0 |
+| magnet range | 0 | 0.6 | **1.6** |
+| bin capacity | 100 | **130** | 70 |
+| boost cd mult | 1.0 | 1.0 | **0.85** |
 
-### Balancing model (how numbers stay sane)
-- **Shard income curve:** target ~5-15 shards per early room, scaling so a
-  full run of 10 rooms yields ~150-400 shards depending on build.
-  `shards_per_room ≈ 2 + room * 0.8 + (dust_collected/10)`.
-- **Meta cost pacing:** a new meta level should take ~0.5-2 runs early,
-  ~2-5 runs late. With `base*1.6^lvl`, level 10 of a base-20 item costs 328
-  shards — reachable in ~1-2 mid-game runs.
-- **Run difficulty ramp:** hazard count `h = 2 + ceil(room*1.2)`, spawn
-  rate `r = 1 + room*0.35` dust/s (capped), dust value per mot `v = 1 +
-  0.1*room`.
-- **AFK cap:** offline collection = `shards/hour ≈ 0.1 * (1 + metaLevel*0.05)`,
-  capped at 8h. ~0.8-1.6 shards/h at low levels → an 8h day ≈ 7-13 shards.
-  Deliberately slow: AFK is a drip, active play is ~10x faster. This keeps
-  the game about playing, not waiting.
-- **Guardrails:** all multipliers have hard caps; battery can never fully
-  refill in one pad (75%); boost can't be spammed (cooldown floor 1s);
-  dust value per second from vents has a per-room cap so idle-in-room can't
-  outpace active play (vents stop spawning when bin is >80% full).
+Trade-off summary: Roomba = balanced; Mi = fast/turny/big bin but weaker
+suction; Shark = monster suction + magnet but slow and tiny hopper (clogs
+often — dock-hugging play).
 
-## 4. Tech plan
+## 3. Controls
 
-- **Three.js** (via ES modules, vendored locally in `js/vendor/three.module.js`
-  so GitHub Pages needs no CDN) + `three/examples/jsm/controls/...` not needed
-  (custom follow cam).
-- **No build step, no npm.** Pure static: `index.html`, `css/style.css`,
-  `js/*.js` as ES modules. GitHub Pages serves it as-is.
-- **Physics:** hand-rolled circle-vs-circle + circle-vs-wall (room is an
-  axis-aligned box with a few box obstacles). No physics lib.
-- **Particles:** single `THREE.Points` buffer for dust motes (up to ~600),
-  pooled. Trash "suck-in" = scale + move toward bot then remove.
-- **Audio:** tiny WebAudio synth blips (no assets). Optional mute button.
-- **Save:** `localStorage` key `dustybot_save_v1` = { shards, meta{},
-  lastSeen, bestRoom, runsWon-ish stats }.
-- **Offline calc:** on load, `dt = now - lastSeen`; if dt > 60s and
-  Auto-Pilot unlocked: `shards += rate * min(dt, 8h)`. Show a "while you
-  were away" toast.
-- **Perf targets (phone):** < 30 draw calls, no shadows (fake blob shadow
-  under bot via a dark circle mesh), pixel ratio capped at 2, particle cap
-  600, no postprocessing. 60fps on mid-range Android is the goal.
-- **Mobile viewport:** `viewport-fit=cover`, `user-scalable=no`, touch-action
-  none on canvas, safe-area insets for UI, portrait-first (works landscape
-  but designed portrait).
-- **PWA-lite:** `manifest.webmanifest` + small inline SVG icon so it's
-  installable on phone home screen.
+- **Virtual joystick** (left-half touch zone, drawn knob): analog steer.
+- **Tap-to-move** (right-half tap): sets a target point; the bot drives
+  straight with obstacle sliding. Joystick input cancels the tap target.
+- **Boost button** (hold, right side): ×1.7 speed, then a cooldown of
+  `4.0s * boostCdMult` (floor 1.0s). Boost also spins the brushes faster.
+- **Keyboard** (desktop): WASD/arrows to move, **Space** = boost,
+  mouse click = tap-to-move.
+- No free camera: the 44×44 world is letterbox-fit to the viewport.
+
+## 4. In-run upgrades (1 of 3 after each level)
+
+Weighted pool (`rollPicks`): each upgrade appears `weight` times in the pool;
+a rolled pick removes **all** copies of its id, so the loop always terminates
+and never offers an upgrade twice in one roll. Upgrades at max level are
+excluded. The pool can run dry (10 upgrades, 37 total levels) — then the run
+gets bonus shards instead of a pick (see §1).
+
+| Upgrade | Effect per level | Max | Weight |
+|---|---|---|---|
+| 🌀 Suction Core | ×1.2 suction, +0.5 range, +5 bin | 5 | 3 |
+| 🪥 Turbo Brush | L1 adds brush; then ×1.2 pickup radius | 5 | 3 |
+| ⚡ Speed Coil | ×1.10 speed & turn rate | 5 | 3 |
+| 📦 Extra Hopper | +25 bin | 5 | 3 |
+| 🧲 Magnet Motor | +1.4 magnet pull distance | 3 | 2 |
+| 🔥 Overdrive | ×0.8 boost cooldown | 3 | 2 |
+| 🪙 Scrap Merchant | ×1.15 dust→shard conversion | 3 | 2 |
+| 🌫️ Wide Suction | ×1.15 pickup radius | 3 | 2 |
+| 📦 Deep Hopper | +20 bin | 3 | 2 |
+| 🍀 Gold Bristles | +3% gold mote chance | 2 | 1 |
+
+## 5. Meta upgrades (hangar — persist forever, cost `base * 1.6^level`)
+
+| Upgrade | Base ✦ | Max | Effect per level |
+|---|---|---|---|
+| 🌀 Factory Suction | 20 | 10 | +5% suction (capped ×3 total) |
+| ⚡ Chassis Rollers | 20 | 10 | +4% speed |
+| 📦 Wider Hopper | 25 | 10 | +8 bin |
+| 🧲 Magnet Coil | 40 | 8 | +4% pickup radius |
+| 🧲 Mote Magnet | 50 | 8 | +6% suction range |
+| ✨ Shard Polisher | 60 | 10 | +3% shard gains |
+| 🤖 Auto-Pilot Sensor | 100 | 1 | unlocks offline shards |
+| 🍀 Lucky Bristles | 200 | 5 | +3% gold chance |
+
+## 6. Physics & pickup model (what the numbers do)
+
+Per mote, per frame (`dust.js`):
+1. **Brush sweep** (if `brushLevel > 0`): corner brushes push motes inward
+   from all sides, stronger with more brush levels.
+2. **Suction** (omnidirectional, not a cone): if `dist < suckR` where
+   `suckR = max(pickupR + 0.5, suctionRange × suction)`, apply force
+   `34 × suction × (1 - dist/suckR)²` toward the bot.
+3. **Magnet** (passive, if `magnetRange > 0`): constant weak pull within
+   `magnetRange + 2`.
+4. **Friction**, then **pickup** on `dist < pickupRadius` → mote consumed,
+   value goes to the bin (`bin = min(binMax, bin+1)`) and shards are banked.
+
+Clog state scales suction ×0.5 in the formula but `suckR` is 0 while full, so
+in practice **clog = suction off + speed ÷1.25**; brush/magnet/touch still
+collect.
+
+## 7. World, themes & layouts
+
+- Arena **44×44 world units**, square, letterbox-fit to the screen
+  (devicePixelRatio capped at 2). Bot spawns center (22, 22).
+- **4 themes** (`THEMES`), each with floor/wall/dock/dirt palettes:
+  🏠 Residential, 💼 Office, 🛒 Store, 🛰️ Space.
+- **12 named rooms** (`LAYOUTS`), 3 per theme, each a list of AABB
+  obstacles `{x, y, w, h, kind}` (`kind` = sofa/desk/shelf/console/… drives
+  the per-theme render style).
+- Level n: `rot = floor((n-1)/12)`, theme = index `floor((n-1)/3) % 4`,
+  room = index `(n-1) % 3`. Dirt count per §1.
+
+### Layout HARD RULES (when editing `LAYOUTS`)
+* keep the top dock strip clear (y < ~9) — the dock sits at (22, 3.6), r 1.9;
+* keep a 4×4 clear pad around center (22, 22) — the bot spawns there;
+* keep at least a 2-wide corridor between obstacles for the bot to pass.
+
+## 8. Tech plan
+
+- **2D `<canvas>`**, hand-rolled circle-vs-AABB movement with wall/obstacle
+  sliding. No physics lib, no engine, **no build step, no npm** — pure static
+  ES modules, GitHub Pages serves the repo root as-is.
+- **Particles:** motes are plain JS objects in a free-list pool (one level's
+  dirt at a time, ≤160) — far below any particle cap.
+- **Audio:** tiny WebAudio synth blips (no assets): click, suck, gold,
+  clear, buy, upgrade, boost, dump. Mute button top-right.
+- **Save:** `localStorage` key `dustybot_save_v2`:
+  `{ shards, meta{}, lastSeen, bestTime, runs, bestShards }`.
+  `bestTime` = fastest level-1 clear; `bestShards` = best single-run haul;
+  saved on level clear, purchase, and on `pagehide`/tab-hide.
+- **Offline calc:** on load, if `dt > 60s` and Auto-Pilot owned, bank
+  `rate * min(dt, 8h)` (rate per §1) into shards and remember it for the
+  one-time menu toast.
+- **Perf targets (phone):** one canvas, one draw pass, no shadows beyond a
+  fake blob ellipse under the bot, dpr ≤ 2, 60fps on mid-range Android.
+- **Mobile viewport:** `viewport-fit=cover`, `user-scalable=no`,
+  `touch-action: none` on canvas, safe-area insets, portrait-first.
+- **PWA-lite:** `manifest.webmanifest` + inline `icon.svg` so it installs to
+  the phone home screen.
+- **Error trap:** `main.js` hooks `window.onerror`/`unhandledrejection` into
+  a visible on-page banner (mobile-friendly, no DevTools needed).
 
 ### File layout
 ```
 / (repo root = Pages root)
-  index.html
+  index.html              # screens: menu / select / hangar + HUD
   manifest.webmanifest
   icon.svg
   css/style.css
-  js/main.js          # bootstrap, save/load, menu, offline calc
-  js/game.js          # run state machine (menu/room/upgrade/over)
-  js/world.js         # three scene, room gen, props, lighting
-  js/bot.js           # robot entity, battery, bin, movement
-  js/dust.js          # dust particle system, vents, hazards
-  js/controls.js      # joystick + tap-to-move + keyboard
-  js/upgrades.js      # in-run pick UI + meta shop + all balance tables
-  js/ui.js            # HUD (lives, battery, dust count, boost btn), toasts
-  js/audio.js         # WebAudio blips
-  js/vendor/three.module.js
+  js/main.js              # bootstrap, save/load, offline calc, loop, wiring
+  js/game.js              # run state machine (menu/intro/run/pick), shards
+  js/world.js             # 2D canvas world, themes, obstacles, rendering
+  js/bot.js               # bot entity: movement, boost, bin, clog, brushes
+  js/dust.js              # mote system: spawn, suction/brush/magnet, pickup
+  js/controls.js          # joystick + tap-to-move + keyboard
+  js/upgrades.js          # BOTS, run/meta upgrades, themes, layouts, BALANCE
+  js/ui.js                # screens, HUD, pick panel, toasts
+  js/audio.js             # WebAudio synth
+  js/palette.js           # shared canvas/CSS palette
 ```
 
-### Milestones
-1. Scaffold + 3D room + bot you can move with joystick/tap (this proves the
-   phone control feel early).
-2. Dust spawn + vacuum mechanic + dust counter + room-clear.
-3. Hazards + lives + battery + pads + dump station.
-4. Room transition + 1-of-3 upgrade UI.
-5. Meta shop + localStorage + offline shards.
-6. Polish: sounds, toasts, install manifest, GitHub Pages push.
-
 ### GitHub Pages
-- Repo → Settings → Pages → Deploy from branch `/` (root) or `/gh-pages`.
-- Plan: develop in repo root, Pages serves `/` → no base-path issues.
-- All relative URLs (`./js/...`), absolute module imports inside vendor
-  file are fine since it's one file. No `base` config needed.
+- Repo → Settings → Pages → Deploy from branch `/` (root).
+- All relative URLs (`./js/...`); no base path, no CDN, no vendor files.
+- Workflow `.github/workflows/pages.yml` deploys on push to main.
+
+## 9. Balancing model (how numbers stay sane)
+
+- **Shard income:** active play ≈ per-dust (0.05/mote) + trickle (0.05/s) +
+  level bonus (2). A 26-mote level 1 ≈ ~2–4 ✦. Late levels (100+ motes,
+  higher gold mix) ≈ 10–20 ✦ + bonuses.
+- **Meta pacing:** `base * 1.6^lvl` → Factory Suction L10 ≈ 328 ✦,
+  reachable in a few mid-game runs. New meta level ≈ 0.5–2 runs early,
+  2–5 runs late.
+- **AFK cap:** 0.8 ✦/h (×polish), 8h cap → a full day ≈ 6.4 ✦. Deliberately
+  ~10× slower than active play.
+- **Guardrails:** suction meta capped ×3; boost cooldown floor 1.0s; dirt
+  count capped 160; bin is the only "soft fail" (clog) and it never blocks
+  level completion.
+
+## 10. QA checklist (manual playtest)
+
+See `REVIEW.md` P4 for the full ordered checklist. Highlights:
+- [ ] All 3 bots: distinct feel, clog at their own binMax, dock dumps.
+- [ ] Long run (35+ levels): upgrade pool drains → bonus shards, no freeze.
+- [ ] Refresh mid-run: shards/best stats survive (pagehide save).
+- [ ] Offline toast fires once after 60s+ away with Auto-Pilot.
+- [ ] Joystick + tap + keyboard + boost all work; safe-area layout on phone.

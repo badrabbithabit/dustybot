@@ -182,7 +182,7 @@ export class World {
     }
   }
 
-  render(dt, game) {
+  render(game) {
     const c = this.ctx;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const w = window.innerWidth, h = window.innerHeight;
