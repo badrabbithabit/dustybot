@@ -1,12 +1,13 @@
 // All balance tables + upgrade logic. Single source of truth for numbers.
 // 2D top-down, LEVEL-BASED vacuum. A run is a sequence of themed LEVELS:
 // 3 residential rooms -> 3 offices -> 3 stores -> 3 space decks, then it loops
-// through themes with a per-rotation difficulty ramp. Each level has fixed
-// obstacles (furniture/desks/shelves/consoles) and a FIXED amount of themed
-// dirt scattered at level start (it does NOT regenerate); the count scales
-// with the level number. Clear a level by vacuuming every mote, then pick
-// 1 of 3 upgrades. No failure mode yet. Shards are the persistent meta
-// currency.
+// through themes with a per-rotation difficulty ramp. Each level gets a
+// PROCEDURALLY GENERATED room layout (js/levelgen.js, seeded per run) and a
+// FIXED amount of themed dirt scattered at level start (it does NOT
+// regenerate); the count scales with the level number. Clear a level by
+// vacuuming every mote, then pick 1 of 3 upgrades. No failure mode yet.
+// Shards are the persistent meta currency.
+import { generateLevel } from './levelgen.js';
 
 export const BALANCE = {
   arena: { w: 44, h: 44 },          // world units (square, screen-fitted)
@@ -247,62 +248,26 @@ export const THEMES = {
 export const THEME_ORDER = ['residential', 'office', 'store', 'space'];
 
 // ---------------------------------------------------------------------------
-// Room layouts. Each theme has 3 NAMED rooms; each room is a list of AABB
-// obstacles {x, y, w, h, kind}. World is 44x44 (BALANCE.arena), coordinates in
-// world units. `kind` drives the per-theme render style (furniture/desk/etc).
-// HARD RULES for every room (the bot always spawns at the arena center):
-//   * keep the top dock strip clear (y < ~9)
-//   * keep a 4x4 clear pad around center (22,22) — x 20..24 AND y 20..24 must
-//     be free, so the bot never spawns inside furniture
-//   * keep at least a 2-wide corridor between obstacles for the bot to pass
+// Room layouts are generated procedurally (see js/levelgen.js): per-theme
+// room archetypes (sofa & media wall, cubicle farm, shelf aisles, ...) with
+// semantic guardrails (beds get nightstands, counters hug walls, shelves
+// stay parallel, 2u corridors, clear dock strip + spawn pad, and a flood-fill
+// connectivity check so the whole floor is always reachable).
+// Deterministic for a given (theme, level, run seed): run seed 0 (the default)
+// is stable for tests/sim; the game passes a fresh per-run seed so the same
+// level looks different on each run.
 // ---------------------------------------------------------------------------
-const L = (x, y, w, h, kind) => ({ x, y, w, h, kind });
-
-// { name, sub, obstacles } per room. `name` is shown in the level-intro banner.
-export const LAYOUTS = {
-  residential: [
-    { name: 'Living Room', sub: 'sofa & media wall',
-      obstacles: [ L(6, 27, 13, 5, 'sofa'), L(8, 30, 6, 4, 'table'), L(29, 8, 11, 5, 'media'), L(33, 31, 5, 5, 'plant') ] },
-    { name: 'Bedroom', sub: 'bed & wardrobe',
-      obstacles: [ L(6, 11, 12, 11, 'bed'), L(29, 9, 10, 5, 'dresser'), L(29, 31, 8, 6, 'wardrobe') ] },
-    { name: 'Kitchen', sub: 'island & counters',
-      obstacles: [ L(4, 28, 9, 5, 'counter'), L(31, 28, 9, 5, 'counter'), L(14, 32, 16, 4, 'island'), L(30, 8, 10, 4, 'counter') ] },
-  ],
-  office: [
-    { name: 'Open Office', sub: 'desk banks',
-      obstacles: [ L(8, 11, 10, 4, 'desk'), L(26, 11, 10, 4, 'desk'), L(8, 29, 10, 4, 'desk'), L(26, 29, 10, 4, 'desk'), L(6, 20, 4, 6, 'divider') ] },
-    { name: 'Conference', sub: 'big table',
-      obstacles: [ L(14, 28, 16, 7, 'table'), L(4, 12, 8, 5, 'cabinet'), L(32, 12, 8, 5, 'cabinet'), L(4, 30, 6, 6, 'cabinet') ] },
-    { name: 'Cubicle Farm', sub: 'stall grid',
-      obstacles: [ L(7, 12, 7, 6, 'cubicle'), L(30, 12, 7, 6, 'cubicle'), L(7, 26, 7, 6, 'cubicle'), L(30, 26, 7, 6, 'cubicle') ] },
-  ],
-  store: [
-    { name: 'Retail Floor', sub: 'shelf aisles',
-      obstacles: [ L(6, 14, 5, 12, 'shelf'), L(33, 14, 5, 12, 'shelf'), L(6, 30, 5, 8, 'shelf'), L(33, 30, 5, 8, 'shelf') ] },
-    { name: 'Checkout', sub: 'counter & stock',
-      obstacles: [ L(6, 12, 10, 4, 'counter'), L(28, 12, 10, 4, 'counter'), L(10, 29, 8, 6, 'stock'), L(26, 29, 8, 6, 'stock') ] },
-    { name: 'Warehouse', sub: 'pallet stacks',
-      obstacles: [ L(6, 12, 8, 7, 'pallet'), L(30, 12, 8, 7, 'pallet'), L(6, 29, 8, 7, 'pallet'), L(30, 29, 8, 7, 'pallet') ] },
-  ],
-  space: [
-    { name: 'Engineering Deck', sub: 'consoles & hatch',
-      obstacles: [ L(8, 14, 10, 5, 'console'), L(26, 14, 10, 5, 'console'), L(18, 30, 8, 6, 'hatch') ] },
-    { name: 'Research Lab', sub: 'benches & core',
-      obstacles: [ L(6, 16, 8, 6, 'bench'), L(30, 16, 8, 6, 'bench'), L(19, 30, 6, 7, 'core') ] },
-    { name: 'Command Bridge', sub: 'control banks',
-      obstacles: [ L(9, 12, 8, 6, 'console'), L(27, 12, 8, 6, 'console'), L(16, 30, 12, 5, 'console') ] },
-  ],
-};
-
-// Resolve the theme + obstacle layout + dirt count for a given 1-based level.
-export function levelDef(level) {
+// Resolve the theme + generated obstacle layout + dirt count for a given
+// 1-based level. `runSeed` (default 0) varies the obstacle layout per run;
+// theme/slot/dirt cycle exactly as before.
+export function levelDef(level, runSeed = 0) {
   const pos = level - 1;                            // 0-based level index
   const rot = Math.floor(pos / (3 * 4));            // full 4-theme rotations
   const themeKey = THEME_ORDER[Math.floor(pos / 3) % 4]; // which theme
-  const slot = pos % 3;                             // which of the 3 rooms
+  const slot = pos % 3;                             // which archetype slot
   const theme = THEMES[themeKey];
-  const room = LAYOUTS[themeKey][slot] || { name: theme.name, sub: '', obstacles: [] };
-  const obstacles = (room.obstacles || []).map(o => ({ ...o }));
+  const room = generateLevel(themeKey, level, runSeed);
+  const obstacles = room.obstacles.map(o => ({ ...o }));
   const dirtCount = Math.min(BALANCE.dirt.max,
     BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation);
   return { level, themeKey, theme, slot, rot, roomName: room.name, roomSub: room.sub, obstacles, dirtCount };

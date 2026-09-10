@@ -52,11 +52,12 @@ index.html            screens: menu / select / hangar + HUD
 css/style.css         theme
 js/main.js            bootstrap, save/load, offline calc, loop
 js/game.js            run state machine, shard banking
-js/world.js           2D canvas world + rendering (4 themes, 12 rooms)
+js/world.js           2D canvas world + rendering (4 themes)
+js/levelgen.js        procedural room generator (seeded, guarded, pure)
 js/bot.js             bot entity (3 bots), bin/clog, boost
 js/dust.js            mote system: suction / brush / magnet / pickup
 js/controls.js        joystick, tap-to-move, keyboard
-js/upgrades.js        BOTS, upgrades, themes, layouts, BALANCE (source of truth)
+js/upgrades.js        BOTS, upgrades, themes, levelDef, BALANCE (source of truth)
 js/ui.js              screens, HUD, pick panel, toasts
 js/audio.js           WebAudio synth SFX
 js/palette.js         shared palette

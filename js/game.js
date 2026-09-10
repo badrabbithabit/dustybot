@@ -1,9 +1,9 @@
 // game.js — run state machine. A run is a sequence of themed LEVELS
 // (residential -> office -> store -> space, looping with a per-rotation ramp).
-// Each level: fixed obstacles + a FIXED set of themed dirt scattered at start
-// (no regen); the dirt count scales with the level number. Clear a level by
-// vacuuming every mote AND dumping it all at the dock, then pick 1 of 3
-// upgrades. NO failure mode.
+// Each level: procedurally generated room layout (seeded per run) + a FIXED
+// set of themed dirt scattered at start (no regen); the dirt count scales
+// with the level number. Clear a level by vacuuming every mote AND dumping
+// it all at the dock, then pick 1 of 3 upgrades. NO failure mode.
 import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal } from './upgrades.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
@@ -29,6 +29,8 @@ export class Game {
     this._fullWarned = false;
     this._introTimer = 0;
     this._levelDirtTotal = 0;
+    this._runSeed = 0;      // per-run layout seed (set in newRun)
+    this._def = null;       // cached levelDef for the current level
 
     this.controls.onTap = (sx, sy) => {
       if (this.state !== 'run') return null;
@@ -62,6 +64,7 @@ export class Game {
     this.level = 1;
     this._frac = 0;
     this._fullWarned = false;
+    this._runSeed = (Math.random() * 4294967296) >>> 0; // fresh layouts each run
     this._cleared = 0;   // dirt dumped from the bin this level (drives level clear)
     this.bot = new Bot(this.world, this.stats);
     this.bot.onBoost = () => {
@@ -79,7 +82,8 @@ export class Game {
   // then scatter the fixed themed dirt. Input is frozen during the intro banner.
   loadLevel(n) {
     this.level = n;
-    const def = levelDef(n);
+    const def = levelDef(n, this._runSeed);
+    this._def = def;   // cache: HUD reads theme from this every frame
     this.world.setLevel(def.theme, def.obstacles, def.themeKey);
 
     // bot at a clear spot (every layout keeps the arena center free)
@@ -161,7 +165,7 @@ export class Game {
     UI.setHud({
       dust: this.stats.dust,
       dirt: this.dust.count, dirtTotal: this._levelDirtTotal,
-      level: this.level, themeIcon: levelDef(this.level).theme.icon,
+      level: this.level, themeIcon: this._def.theme.icon,
       bin: this.bot.bin, binMax: this.stats.binMax,
       time: this.time,
     });

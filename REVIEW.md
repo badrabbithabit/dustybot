@@ -119,8 +119,10 @@ Verified dead (grep + trace), no runtime effect if removed:
 Do this after P0–P2. Desktop (keys/mouse) and mobile (joystick/tap/boost):
 
 - [ ] All 3 bots: distinct look, stats felt (speed/suction/bin), portrait matches in-game bot.
-- [ ] All 12 rooms (4 themes × 3): spawn pad clear, no motes stuck in corners unreachable,
-  corridors passable, dock reachable, no overlap with top dock strip.
+- [ ] Generated rooms (procedural, per §procedural-levels below): across a few levels/seeds,
+  spawn pad clear, no motes stuck in unreachable corners, corridors passable (≥4 u), dock
+  reachable, no sealed pockets (flood-fill), no overlap with the top dock strip. The invariants
+  are guarded by `validateLayout` in `js/levelgen.js` and covered by `test/levelgen.test.js`.
 - [ ] Full loop: menu → select → run → dock dump → level clear → pick (verify 3 distinct
   cards, game state during pick) → next level theme change.
 - [ ] Upgrade edge: force-max a bot (console) → level clear → **must not freeze** (validates fix #1).
@@ -165,3 +167,40 @@ Do this after P0–P2. Desktop (keys/mouse) and mobile (joystick/tap/boost):
 - Simulated upgrade pool: **hang risk after 33 picks** (2 distinct left); empty pool at 37.
 - Clog simulation: roomba 100/100 clogs OK · mi 100/130 early clog · shark 70/100 never.
 - Grep-verified orphans listed in P2 (each has exactly one definition/assignment site, zero readers).
+
+---
+
+## Procedural levels (2026-09-10 follow-up)
+
+Supersedes the fixed-`LAYOUTS` approach described above (P3/P5 referenced the old
+12-room × 4-rotation test; that test is now `test/levelgen.test.js`).
+
+**What changed**
+- `js/levelgen.js` (new) — seeded procedural room generator. Each theme has room
+  *archetypes* (hand-placed anchor sets, e.g. bed+nightstand, checkout counter, cryo hatch)
+  plus random per-theme filler. Replaces the static `LAYOUTS` table in `js/upgrades.js`
+  (now removed); `levelDef(level, runSeed = 0)` calls `generateLevel(themeKey, level, runSeed)`.
+  A mulberry32 RNG makes each `(themeKey, level, runSeed)` reproducible; the game rolls a fresh
+  seed per run, tests/sim use seed 0.
+- Guardrails (`validateLayout` + placement rules): in-bounds, dock strip (y<9) clear, spawn pad
+  clear, **≥4 u corridors**, **flood-fill connectivity** (no sealed pockets), count 3–9, valid
+  `kind`, plus semantic rules (bed→nightstand, media faces sofa, counters hug walls, desks in
+  row bands). A per-theme `fallbackLayout` is always-valid, so a run can never softlock.
+- `js/game.js` — generates `_runSeed` per run and caches the level `_def`.
+- `test/levelgen.test.js` (new, 12 blocks) — invariants across many seeds/levels + fallback
+  validity.
+
+**Sim-balance steering fix** (`tools/steer.mjs`, new — sim proxy only, no game-code change)
+- The headless bot used to ram/oscillate on large obstacles. It now does an obstacle-aware
+  raycast, commits to a detour waypoint around the blocking piece (two-tier clearance probe),
+  and only re-plans when the target changes or it reaches the gate. A grid pathfinder and a
+  reachability-prefixed corner picker were both tried and reverted (net-negative on aggregate);
+  the locked-in corner heuristic keeps base failures to 2 (both Shark), on geometrically-fair
+  4 u-clearance levels.
+
+**Balance (procedural vs old handcrafted baseline)** — `tools/sim-bots.mjs`, seed 0:
+- Base: roomba 54.7 s / 0 fails, mi 48.5 s / 0, shark 64.9 s / 2 (L1r2, L31r2) — old handcrafted
+  was roomba 65.8 s / 2, mi 70.1 s / 4, shark 95.1 s / 8. Procedural is faster and cleaner across
+  all three bots.
+- 2400-level sweep: 0 invalid, 0 fallbacks, avg 4.91 obstacles (old rooms were 3–5).
+- Full unit suite: 21/21 pass (`npm test`).

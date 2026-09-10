@@ -5,6 +5,10 @@
 import { BALANCE, makeRunStats, levelDef, applyPick, RUN_UPGRADES } from '../js/upgrades.js';
 import { Bot } from '../js/bot.js';
 import { DustSystem } from '../js/dust.js';
+import { steer } from './steer.mjs';
+
+// Stable reference for the dock target (so waypoint-commitment can key on it).
+const DOCK_TARGET = { x: BALANCE.dock.x, y: BALANCE.dock.y, dock: true };
 
 // ---- seeded RNG (LCG) so runs are reproducible ----------------------------
 let _seed = 1;
@@ -39,7 +43,7 @@ function pickTarget(bot, dust, ai) {
   // go to dock: bin 85%+ full (pre-clog trips), or clogged, or final dump
   const fullish = bot.bin >= 0.85 * bot.stats.binMax && bot.bin > 0;
   const finalDump = dust.items.length === 0 && bot.bin > 0;
-  if (fullish || finalDump || bot.full) return { x: BALANCE.dock.x, y: BALANCE.dock.y, dock: true };
+  if (fullish || finalDump || bot.full) return DOCK_TARGET;
   let best = null, bd = Infinity;
   for (const it of dust.items) {
     if (ai.skip.has(it)) continue;
@@ -49,33 +53,9 @@ function pickTarget(bot, dust, ai) {
   return best || null;
 }
 
-// Local-avoidance steering: aim at the target, but if the straight line is
-// blocked ~1.5u ahead, deflect to the nearest clear direction (smallest turn
-// wins; ties broken by preserved progress). Mirrors a human steering around
-// furniture. Returns {input, d} where d is straight-line distance to target.
-function steer(bot, world, target) {
-  const input = { x: 0, y: 0, boost: false, tap: null };
-  if (!target) return { input, d: 0 };
-  const dx = target.x - bot.x, dy = target.y - bot.y;
-  const d = Math.hypot(dx, dy);
-  if (d <= 0.5) return { input, d }; // deadzone (pickupR is larger anyway)
-  let a = Math.atan2(dy, dx); // screen angle, +y down
-  const R = BALANCE.bot.radius, look = 1.5;
-  const free = (ang) => world.isFree(bot.x + Math.cos(ang) * look, bot.y + Math.sin(ang) * look, R);
-  if (!free(a)) {
-    let best = null;
-    for (const off of [0.55, -0.55, 1.1, -1.1, 1.75, -1.75, 2.4, -2.4, 3.0, -3.0]) {
-      if (free(a + off)) {
-        const score = Math.cos(off);
-        if (!best || score > best.score) best = { score, ang: a + off };
-      }
-    }
-    if (best) a = best.ang; else a += Math.PI; // fully boxed in: back up
-  }
-  input.x = Math.cos(a);
-  input.y = -Math.sin(a); // game passes iy = -j.y (up = +)
-  return { input, d };
-}
+// Steering lives in tools/steer.mjs (obstacle-aware raycast + detour
+// commitment; the commitment is what kills the old ram-deflect-ram loop).
+// It mutates ai.wp / ai.wpFor on the per-bot `ai` object.
 
 function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
   reseed(seed);
@@ -94,7 +74,7 @@ function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
   dust.spawnLevel(def.dirtCount, def.theme, stats);
 
   let t = 0, dist = 0, clogs = 0, dumps = 0, val = 0, wasFull = false;
-  const ai = { cur: null, bestD: 0, stall: 0, skip: new Set() };
+  const ai = { cur: null, bestD: 0, stall: 0, skip: new Set(), wp: null, wpFor: null };
   const dt = 1 / 60;
   const dock = BALANCE.dock;
 
@@ -103,7 +83,7 @@ function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
     if (dust.items.length === 0 && bot.bin === 0) break;
 
     const target = pickTarget(bot, dust, ai);
-    const { input, d } = steer(bot, world, target);
+    const { input, d } = steer(bot, world, target, ai);
 
     const px = bot.x, py = bot.y;
     bot.update(dt, input);

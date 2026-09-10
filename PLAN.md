@@ -138,16 +138,47 @@ collect.
   (devicePixelRatio capped at 2). Bot spawns center (22, 22).
 - **4 themes** (`THEMES`), each with floor/wall/dock/dirt palettes:
   🏠 Residential, 💼 Office, 🛒 Store, 🛰️ Space.
-- **12 named rooms** (`LAYOUTS`), 3 per theme, each a list of AABB
-  obstacles `{x, y, w, h, kind}` (`kind` = sofa/desk/shelf/console/… drives
-  the per-theme render style).
-- Level n: `rot = floor((n-1)/12)`, theme = index `floor((n-1)/3) % 4`,
-  room = index `(n-1) % 3`. Dirt count per §1.
+- **Procedural rooms** (`js/levelgen.js`). Every level is *generated*, not
+  hand-authored. Each theme has a set of **room archetypes** — a hand-placed
+  "anchor" obstacle arrangement that gives the room its character (e.g.
+  bedroom = bed + nightstand, checkout = counter + stock line, cryo-bay =
+  hatch + consoles). On top of the anchor set, a small number of **random
+  filler** obstacles are drawn from a per-theme pool. Obstacles are AABBs
+  `{x, y, w, h, kind}`; `kind` (sofa/desk/shelf/console/… — 20 kinds) drives
+  the per-theme render style, unchanged.
+- Level n: `rot = floor((n-1)/12)`, theme = index `floor((n-1)/3) % 4`.
+  The archetype is chosen by shuffling the theme's archetypes with a
+  deterministic key derived from `(runSeed, level)`, then retrying placement
+  up to 60 times. Dirt count per §1; obstacle count ramps with `rot` (3 → 5)
+  and is capped — difficulty comes mostly from the dirt ramp.
+- **Deterministic per seed.** `levelDef(level, runSeed = 0)` →
+  `generateLevel(themeKey, level, runSeed)`. A mulberry32 RNG makes a given
+  `(themeKey, level, runSeed)` fully reproducible. The game rolls a fresh
+  32-bit `runSeed` per run (so a room differs run to run); tests & the
+  balance sim use `runSeed 0` for a stable reference layout.
 
-### Layout HARD RULES (when editing `LAYOUTS`)
+### Generation HARD RULES (enforced by `validateLayout`)
+* in-bounds, positive sizes, valid `kind`, obstacle count in [3, 9];
 * keep the top dock strip clear (y < ~9) — the dock sits at (22, 3.6), r 1.9;
-* keep a 4×4 clear pad around center (22, 22) — the bot spawns there;
-* keep at least a 2-wide corridor between obstacles for the bot to pass.
+* keep the 4×4 clear pad around center (22, 22) — the bot spawns there;
+* **≥ 4 u corridors** between obstacles (and to walls) so the bot can pass —
+  the old handcrafted rooms used 4–7 u margins; this keeps generated rooms
+  equally navigable and gives the sim's local-steering bot 2 u of center
+  freedom to route around a piece;
+* **flood-fill connectivity**: the free space must be a single connected
+  region (no sealed pockets);
+* **semantic guardrails** at placement time (bed gets a nightstand, media
+  faces the sofa, counters hug walls, hatch/console sit center-bottom, desks
+  in row bands) so rooms read as real rooms, not random boxes;
+* a **`fallbackLayout(themeKey)`** is the last-resort output if no generated
+  layout validates — it is itself always valid, so a run can never softlock.
+
+> The balance-sim steering bot (`tools/steer.mjs`) is *not* a human: it aims
+> at the nearest mote and commits to a detour waypoint around any blocking
+> obstacle (obstacle-aware raycast + waypoint commitment, plus a two-tier
+> clearance probe). A couple of base Shark runs still time out in tight
+> corner pockets — treat "fails" in `BALANCE_REVIEW.md` as an upper bound on
+> difficulty, not a game soft-lock (there is no failure state).
 
 ## 8. Tech plan
 
@@ -184,10 +215,11 @@ collect.
   js/main.js              # bootstrap, save/load, offline calc, loop, wiring
   js/game.js              # run state machine (menu/intro/run/pick), shards
   js/world.js             # 2D canvas world, themes, obstacles, rendering
+  js/levelgen.js          # procedural room generator (seeded, guarded, pure)
   js/bot.js               # bot entity: movement, boost, bin, clog, brushes
   js/dust.js              # mote system: spawn, suction/brush/magnet, pickup
   js/controls.js          # joystick + tap-to-move + keyboard
-  js/upgrades.js          # BOTS, run/meta upgrades, themes, layouts, BALANCE
+  js/upgrades.js          # BOTS, run/meta upgrades, themes, levelDef, BALANCE
   js/ui.js                # screens, HUD, pick panel, toasts
   js/audio.js             # WebAudio synth
   js/palette.js           # shared canvas/CSS palette

@@ -7,6 +7,12 @@ line-by-line read of `js/upgrades.js`, `js/bot.js`, `js/dust.js`, `js/game.js`.
 Sim harness: `tools/sim-bots.mjs` (run with `node tools/sim-bots.mjs`).
 Source of truth for all numbers: `js/upgrades.js`.
 
+> **Current status (2026-09-10):** two things changed after this review — levels are now
+> **procedurally generated** (`js/levelgen.js`, replacing the handcrafted `LAYOUTS`) and the
+> **sim bot detours around obstacles** (`tools/steer.mjs`). The §3/§10 numbers were measured on
+> handcrafted layouts with the earlier non-detouring AI. See **§11** for the current
+> procedural-level numbers.
+
 ---
 
 ## TL;DR
@@ -336,3 +342,51 @@ brush was worth ~4 s, Shark 95.1 s). Maxed per-successful-run: Roomba ~14.3 s,
 Mi ~14.4 s, Shark ~10.2 s (all end at brushLevel 5 with 4 pickup bonuses —
 the original intended count; the interim additive fix had accidentally handed
 out a 5th). `npm test` 9/9.
+
+## 11. Procedural levels + detour-capable sim bot (2026-09-10)
+
+Two independent changes moved the numbers, so §3/§10 no longer reflect the shipped
+geometry or the sim AI. This addendum is the current source of truth for clear
+**times on the current levels**; the bot/upgrade *identity* analysis in §4 (bin-is-the-hidden
+stat, Shark two-faced, Mi front-loaded, suction-snowball, trickle-inverts-speed) is unchanged
+by either.
+
+**Level geometry is now procedural** (`js/levelgen.js`). Every level is generated per
+`(theme, level, runSeed)` from per-theme room archetypes + guarded random filler:
+≥4 u corridors, flood-fill connectivity, dock strip + spawn pad clear, 3–9 obstacles.
+Old rooms were 3–5 hand-placed; the generator averages **4.91**. A 2400-level sweep (200
+seeds × 12 levels) produced **0 invalid / 0 fallback** layouts. The `levelDef(level, runSeed=0)`
+surface is unchanged; the sim still uses seed 0, so the per-level *clear-time shape* (dirt
+count, dock distance) is comparable to §3 even though the obstacle layout differs.
+
+**The sim bot now detours** (`tools/steer.mjs`, sim proxy only — the shipped game is
+human-controlled, so this is not a gameplay change). The old 1.5 u point-probe AI oscillated
+below an obstacle instead of routing around it (§1 caveat). It now raycasts the obstacles,
+commits to a detour waypoint around the blocking piece, and re-plans at the gate. A grid
+pathfinder and a reachability-prefixed corner picker were both tried and reverted (net-negative
+on aggregate). Net effect: base fails **8 → 2** (both Shark: L1r2, L31r2), i.e. the §1
+"treat fails as an upper bound" caveat now applies to essentially nothing.
+
+**Current sim (procedural levels, seed 0; `node tools/sim-bots.mjs`):**
+
+| scenario | Roomba | Mi | Shark |
+|---|---|---|---|
+| **base** clear / fails | 54.7 s / **0** | 48.5 s / **0** | 64.9 s / 2 (L1r2, L31r2) |
+| **mid** clear / fails | 40.9 s / 0 | 36.2 s / 0 | 36.0 s / 0 |
+| **maxed** clear / fails | 15.0 s / 0 | 20.2 s / 1 | 9.8 s / 0 |
+| boost duty (8 s hold) | 120/480 = 25.0 % | — | — |
+
+vs the §3 handcrafted baseline (base): Roomba 65.6 s / 2, Mi 58.0 s / 1, Shark 96.8 s / 8.
+Procedural levels are **faster and cleaner on every bot** at base (mean ~15–25 % less time,
+26 fewer fails) — the ≥4 u corridor guardrail removed the corner-pocket stalls that the old
+non-detouring AI used to hit.
+
+Base per-level clear (s), L1…L34 step 3:
+
+| bot | L1 | L4 | L7 | L10 | L13 | L16 | L19 | L22 | L25 | L28 | L31 | L34 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Roomba | 34 | 41 | 42 | 48 | 59 | 59 | 59 | 64 | 66 | 59 | 67 | 59 |
+| Mi | 27 | 35 | 35 | 44 | 47 | 52 | 56 | 60 | 61 | 53 | 61 | 52 |
+| Shark | 38 | 44 | 43 | 50 | 58 | 59 | 61 | 56 | 58 | 62 | 73 | 55 |
+
+`npm test` → 21/21 (9 upgrade + 12 `test/levelgen.test.js`).
