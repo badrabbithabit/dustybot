@@ -390,3 +390,50 @@ Base per-level clear (s), L1…L34 step 3:
 | Shark | 38 | 44 | 43 | 50 | 58 | 59 | 61 | 56 | 58 | 62 | 73 | 55 |
 
 `npm test` → 21/21 (9 upgrade + 12 `test/levelgen.test.js`).
+
+## 12. "Starts too strong" — denser start + tighter base suction
+
+Playtest feedback: the first act feels too easy / bots too strong out of the gate.
+Diagnosis, in order of measured impact:
+
+1. **Sparse early motes** — L1 had only 26 motes in a 44×44 arena; L10 had 80. The sim
+   confirmed suction range is *not* what makes the start easy (early levels barely moved
+   when suction range alone was cut): the start was easy because there was simply not much
+   to do, and no bin pressure until L12 (shark) / L14 (roomba) / L19 (mi).
+2. **Passive autofetch** — base `suctionRange` (3.4 / 3.0 / 4.2) gave an autofetch band of
+   1.5–3.6 u beyond pickup, so motes off the walking line were vacuumed without steering.
+3. Meta carryover inflates a returning player's start — **left untouched** (not chosen).
+
+**Changes applied:**
+
+- `BALANCE.dirt.base` 26 → **40** (ramp +6/level and 160 cap unchanged; cap now reached at
+  L21 instead of L23). First bin overflow moves forward: shark L12→**L10**, roomba L14→
+  **L12**, mi L19→**L17**.
+- Base `suctionRange` nerf: roomba 3.4→**2.6**, mi 3.0→**2.4**, shark 4.2→**3.4**
+  (autofetch 3.4/3.0/5.46 → 2.6/2.4/4.42 u). Early vacuuming becomes active; the first
+  Suction Core pick is now a +37–45 % reach gain; Shark's maxed snowball is capped
+  (suckR 21.7 → 14.7 u). Also resolves the deferred playtest item from §9.
+
+**Sim (procedural levels, seed 0) — §11 vs now:**
+
+| scenario | Roomba (was) | Mi (was) | Shark (was) |
+|---|---|---|---|
+| **base** clear / fails | 67.2 s / 1 (54.7 / 0) | 51.1 s / 0 (48.5 / 0) | 66.4 s / 1 (64.9 / 2) |
+| **mid** clear / fails | 44.5 s / 0 (40.9) | 39.3 s / 0 (36.2) | 40.8 s / 0 (36.0) |
+| **maxed** clear / fails | 16.9 s / 0 (15.0) | 21.5 s / 1 (20.2) | 11.8 s / 0 (9.8) |
+
+Base per-level clear (s), §11 → now:
+
+| bot | L1 | L4 | L7 | L10 | L13 | L16 | L19 | L22 | L25 | L28 | L31 | L34 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Roomba | 34→**39** | 41→47 | 42→51 | 48→61 | 59→64 | 59→69 | 59→69 | 64→71 | 66→74 | 59→65 | 67→72 | 59→62 |
+| Mi | 27→**33** | 35→40 | 35→42 | 44→42 | 47→58 | 52→56 | 56→53 | 60→60 | 61→58 | 53→55 | 61→61 | 52→54 |
+| Shark | 38→**45** | 44→52 | 43→51 | 50→59 | 58→64 | 59→65 | 61→68 | 56→71 | 58→67 | 62→69 | 73→71 | 55→57 |
+
+Early game (L1–L10) is now **+15–25 %** of the old clear time; mid +5–20 %; maxed flat.
+Base dumps/level tick up (roomba 1.72, mi 1.67, shark 1.94) — the logistics loop starts
+earlier. The 2 base fails (roomba L7r1, shark L25r3) are the known detour-AI oscillation
+artifacts (§1), not gameplay.
+
+Test updates: `test/upgrades.test.js` (two `3.4` base assertions → `2.6`),
+`test/levelgen.test.js` (hardcoded `26` → `BALANCE.dirt.base`). `npm test` → 21/21.

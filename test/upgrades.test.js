@@ -50,7 +50,7 @@ test('applyPick: respects max level and mutates stats', () => {
   let expSuction = 1.0;
   for (let i = 0; i < 5; i++) expSuction *= 1.2;   // same ops as impl, exact match
   assert.equal(s.suction, expSuction);
-  assert.equal(s.suctionRange, 3.4 + 0.5 * 5);
+  assert.equal(s.suctionRange, 2.6 + 0.5 * 5);
   assert.equal(s.binMax, 100 + 5 * 5);
   assert.equal(applyPick(s, 'nope'), false, 'unknown id is a no-op');
 });
@@ -112,7 +112,7 @@ test('makeRunStats: per-bot bases, meta math, suction cap x3', () => {
   assert.equal(S.pickupRadius, 1.7 * (1 + 0.04 * 8));
   assert.equal(S.shardMult, 1 * (1 + 0.03 * 10));
   assert.equal(S.goldChance, BALANCE.dirt.goldChance + 0.03 * 5);
-  assert.equal(S.suctionRange, 3.4 * (1 + 0.06 * 8));
+  assert.equal(S.suctionRange, 2.6 * (1 + 0.06 * 8));
   assert.equal(makeRunStats({ meta_suction: 40 }, 'roomba').suction, 3.0,
     'meta suction hard-capped at x3 (needs L40 to hit it)');
   // makeRunStats with meta={}-style zero levels must equal bot base stats

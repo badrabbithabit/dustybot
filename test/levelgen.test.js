@@ -7,7 +7,7 @@ import {
   GEN, KINDS, makeRng, mix,
   generateLevel, validateLayout, fallbackLayout,
 } from '../js/levelgen.js';
-import { levelDef } from '../js/upgrades.js';
+import { levelDef, BALANCE } from '../js/upgrades.js';
 
 const THEMES = ['residential', 'office', 'store', 'space'];
 const LEVELS = 300;
@@ -158,7 +158,7 @@ test('levelDef: still exposes theme/room/dirt and now carries generated obstacle
   assert.equal(d7.themeKey, 'store');
   assert.equal(d1.slot, 0);
   assert.equal(d4.slot, 0);
-  assert.equal(d1.dirtCount, 26);
+  assert.equal(d1.dirtCount, BALANCE.dirt.base);
   assert.ok(Array.isArray(d1.obstacles) && d1.obstacles.length >= GEN.MIN_OBS);
   assert.ok(d1.roomName && d1.roomSub);
   assert.ok(d1.theme.icon && d1.theme.name);

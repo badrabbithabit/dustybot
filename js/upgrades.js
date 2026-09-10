@@ -16,7 +16,7 @@ export const BALANCE = {
   dirt: {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
-    base: 26,                       // dirt count at level 1
+    base: 40,                       // dirt count at level 1 (raised 26->40: denser start)
     perLevel: 6,                    // + dirt per level (scales with level number)
     perRotation: 12,                // + dirt per full theme rotation (extra ramp)
     max: 160,
@@ -42,7 +42,7 @@ export const BOTS = {
     blurb: 'Balanced. Reliable. The one that started it all.',
     colors: { rim: '#4d1f1a', body: '#ff6b57', bodyDk: '#c23c2c', dome: '#241a17', domeHi: '#ffab8f' },
     stats: {
-      suction: 1.0, suctionRange: 3.4, pickupRadius: 1.7, brushLevel: 0,
+      suction: 1.0, suctionRange: 2.6, pickupRadius: 1.7, brushLevel: 0,
       speed: 6.0, turnRate: 5.0, magnetRange: 0.0,
       binMax: 100, boostCdMult: 1.0, shardMult: 1.0,
     },
@@ -55,7 +55,7 @@ export const BOTS = {
     blurb: 'Quick, nimble, and its LiDAR sees around corners. Big hopper.',
     colors: { rim: '#12304d', body: '#5cc8ff', bodyDk: '#1f5f8a', dome: '#0e1a28', domeHi: '#a8e6ff' },
     stats: {
-      suction: 1.0, suctionRange: 3.0, pickupRadius: 1.5, brushLevel: 0,
+      suction: 1.0, suctionRange: 2.4, pickupRadius: 1.5, brushLevel: 0,
       speed: 7.2, turnRate: 6.4, magnetRange: 0.6,
       binMax: 130, boostCdMult: 1.0, shardMult: 1.0,
     },
@@ -68,7 +68,7 @@ export const BOTS = {
     blurb: 'Brutal suction, and a magnet that sings once upgraded. But slow, and the hopper runs full fast.',
     colors: { rim: '#2c1447', body: '#c07bff', bodyDk: '#7a3fae', dome: '#190c28', domeHi: '#dcb9ff' },
     stats: {
-      suction: 1.3, suctionRange: 4.2, pickupRadius: 1.9, brushLevel: 0,
+      suction: 1.3, suctionRange: 3.4, pickupRadius: 1.9, brushLevel: 0,
       speed: 5.1, turnRate: 4.0, magnetRange: 1.6,
       binMax: 90, boostCdMult: 0.85, shardMult: 1.0,
     },
