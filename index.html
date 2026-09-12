@@ -23,6 +23,7 @@
     <div class="hud-left">
       <div id="level-badge">LV 1</div>
       <div id="time-label">0:00</div>
+      <button id="btn-pause" class="pause-btn" title="Pause (ESC / P)">II</button>
     </div>
     <div class="hud-mid">
       <div id="dust-count">0</div>
@@ -49,8 +50,16 @@
 <!-- Joystick -->
 <div id="joy" class="hidden"><div id="joy-base"></div><div id="joy-knob"></div></div>
 
+<!-- Instructions — shown on load, before the menu -->
+<div id="screen-instructions" class="screen">
+  <h1>HOW TO PLAY</h1>
+  <p class="tag">the manual · 30 seconds</p>
+  <div id="instructions-body" class="help-body"></div>
+  <button id="btn-instructions-start" class="big">START</button>
+</div>
+
 <!-- Menu -->
-<div id="screen-menu" class="screen">
+<div id="screen-menu" class="screen hidden">
   <h1>DUSTY BOT</h1>
   <p class="tag">a 2d vacuum roguelike</p>
   <div id="shard-bank"><span id="menu-shards">0</span> shards</div>
@@ -77,6 +86,23 @@
   <div id="hangar-shards-wrap"><span id="hangar-shards">0</span> shards</div>
   <div id="meta-list"></div>
   <button id="btn-back-menu" class="big small">back</button>
+</div>
+
+<!-- Pause (in-run overlay) -->
+<div id="screen-pause" class="screen hidden">
+  <h1>PAUSED</h1>
+  <p class="tag">the dust isn't going anywhere</p>
+  <button id="btn-resume" class="big">RESUME</button>
+  <button id="btn-pause-help" class="big small">HELP</button>
+  <button id="btn-pause-quit" class="big small">QUIT TO MENU</button>
+</div>
+
+<!-- Help page (reached from the pause screen) -->
+<div id="screen-help" class="screen hidden">
+  <h1>HELP</h1>
+  <p class="tag">the manual, mid-run</p>
+  <div id="help-body" class="help-body"></div>
+  <button id="btn-help-back" class="big small">BACK</button>
 </div>
 
 <!-- Upgrade pick (level up) — compact panel, game keeps running behind it -->

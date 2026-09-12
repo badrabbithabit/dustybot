@@ -34,6 +34,7 @@ export class Game {
     this._def = null;       // cached levelDef for the current level
     this._screen = 'menu';  // which menu screen is visible (hangar idle needs it)
     this.hangar = null;     // live HangarIdle sim while the hangar screen is open
+    this._pausedFrom = null; // state to restore when unpausing ('run' | 'intro')
 
     this.controls.onTap = (sx, sy) => {
       if (this.state !== 'run') return null;
@@ -79,6 +80,7 @@ export class Game {
       this.bot.boostCd = Math.max(BALANCE.bot.boostCdFloor, this.bot.boostCd);
     };
     UI.showAll(SCREENS, null);
+    UI.hide('screen-pause'); UI.hide('screen-help');
     UI.show('hud');
     UI.show('joy');
     this.loadLevel(1);
@@ -250,9 +252,33 @@ export class Game {
     UI.show('pick-panel');
   }
 
+  // ---- pause ----
+  // Only live runs can pause ('run' or the 'intro' banner); 'pick' and the
+  // menus are already static. We remember where we paused from so resume
+  // continues exactly there (intro timer included).
+  togglePause() {
+    if (this.state !== 'run' && this.state !== 'intro') return false;
+    this._pausedFrom = this.state;
+    this.state = 'paused';
+    UI.hide('pick-panel');
+    UI.show('screen-pause');
+    return true;
+  }
+
+  resumeRun() {
+    if (this.state !== 'paused') return false;
+    this.state = this._pausedFrom || 'run';
+    this._pausedFrom = null;
+    UI.hide('screen-pause');
+    UI.hide('screen-help');
+    return true;
+  }
+
   toMenu() {
     this.state = 'menu';
     this._screen = 'menu';
+    this._pausedFrom = null;
+    UI.hide('screen-pause'); UI.hide('screen-help');
     // Persist hangar idle stats, then tear the sim down.
     if (this.hangar) {
       this.save.idle = this.save.idle || { motes: 0, ms: 0 };

@@ -32,6 +32,7 @@ serves the repo root (see `.github/workflows/pages.yml`).
 | WASD / arrows | desktop steering |
 | Space | desktop boost |
 | Mouse click | desktop tap-to-move |
+| ESC / P / pause button (HUD) | pause (in-run); the pause screen links to the in-game HELP page |
 
 ## Idle & endless
 

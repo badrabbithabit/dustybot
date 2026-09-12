@@ -3,6 +3,7 @@ import { World } from './world.js';
 import { Game } from './game.js';
 import { BALANCE, offlineGain as computeOffline } from './upgrades.js';
 import * as UI from './ui.js';
+import { renderHelp } from './help.js';
 import * as Audio from './audio.js';
 
 const SAVE_KEY = 'dustybot_save_v2';
@@ -78,7 +79,43 @@ boostBtn.addEventListener('touchend', e => { e.preventDefault(); setBoost(false)
 boostBtn.addEventListener('mousedown', () => setBoost(true));
 addEventListener('mouseup', () => setBoost(false));
 
-game.toMenu();
+// ---- Instructions (on load) + in-run pause / help ----
+// Same shared content for the on-load instructions and the pause-screen help.
+renderHelp($('instructions-body'));
+renderHelp($('help-body'));
+
+$('btn-instructions-start').onclick = () => {
+  Audio.resumeAudio(); Audio.sfx.click();
+  UI.hide('screen-instructions');
+  game.toMenu(); // the menu screen is hidden in the HTML until this
+};
+
+$('btn-pause').onclick = () => { Audio.sfx.click(); game.togglePause(); };
+$('btn-resume').onclick = () => { Audio.sfx.click(); game.resumeRun(); };
+$('btn-pause-help').onclick = () => {
+  Audio.sfx.click();
+  UI.hide('screen-pause');
+  UI.show('screen-help');
+};
+$('btn-help-back').onclick = () => {
+  Audio.sfx.click();
+  UI.hide('screen-help');
+  UI.show('screen-pause');
+};
+$('btn-pause-quit').onclick = () => { Audio.sfx.click(); game.toMenu(); };
+
+// Keyboard pause (desktop): ESC / P — back out of help first, then resume, then pause.
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape' && e.key !== 'p' && e.key !== 'P') return;
+  if (!$('screen-help').classList.contains('hidden')) {
+    UI.hide('screen-help');
+    UI.show('screen-pause');
+  } else if (game.state === 'paused') {
+    game.resumeRun();
+  } else {
+    game.togglePause();
+  }
+});
 
 // ---- main loop ----
 const hangarCv = $('hangar-cv'); // null until the element exists; render() is null-safe
