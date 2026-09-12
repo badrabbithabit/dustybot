@@ -1,6 +1,7 @@
 // sim-bots.mjs — balance sim: drives the REAL Bot + DustSystem (js/*.js, no DOM
 // needed) with a simple "nearest mote, detour to dock when bin 85% full" AI.
-// Compares the 3 bots across levels and upgrade scenarios.
+// Compares all 6 bots across levels and upgrade scenarios, on a fake world
+// that includes the mop wet grid (so soak/drag mechanics are exercised).
 // Run: node tools/sim-bots.mjs
 import { BALANCE, makeRunStats, levelDef, applyPick, RUN_UPGRADES } from '../js/upgrades.js';
 import { Bot } from '../js/bot.js';
@@ -22,10 +23,13 @@ Math.random = rng;
 
 // ---- fake world (only what Bot/DustSystem touch) --------------------------
 function makeWorld(def) {
+  const W = BALANCE.arena.w, H = BALANCE.arena.h;
+  // Mini wet grid (mop trail) — mirrors World._wet at res 6 cells/unit.
+  const res = 6, cw = Math.ceil(W * res), ch = Math.ceil(H * res);
+  const wet = new Float32Array(cw * ch);
+  let wetEnergy = 0;
   return {
-    W: BALANCE.arena.w,
-    H: BALANCE.arena.h,
-    obstacles: def.obstacles,
+    W, H, obstacles: def.obstacles,
     blocked(x, y, pad = 0) {
       for (const o of this.obstacles)
         if (x > o.x - pad && x < o.x + o.w + pad && y > o.y - pad && y < o.y + o.h + pad) return true;
@@ -34,6 +38,34 @@ function makeWorld(def) {
     isFree(x, y, r = BALANCE.bot.radius) {
       if (x < r || y < r || x > this.W - r || y > this.H - r) return false;
       return !this.blocked(x, y, r);
+    },
+    stampWet(x, y, amt, radius = 0.8) {
+      if (amt <= 0) return;
+      const cx = (x * res) | 0, cy = (y * res) | 0;
+      const r = Math.max(1, Math.round(radius * res));
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const px = cx + dx, py = cy + dy;
+        if (px < 0 || py < 0 || px >= cw || py >= ch) continue;
+        const i = py * cw + px;
+        const v = wet[i] + amt * (dx * dx + dy * dy > r * r * 0.5 ? 0.5 : 1);
+        wet[i] = v < 1 ? v : 1;
+        wetEnergy++;
+      }
+    },
+    wetAt(x, y) {
+      const px = (x * res) | 0, py = (y * res) | 0;
+      if (px < 0 || py < 0 || px >= cw || py >= ch) return 0;
+      return wet[py * cw + px];
+    },
+    updateWet(dt) {
+      if (wetEnergy <= 0) return;
+      const f = Math.exp(-0.08 * dt);
+      for (let i = 0; i < wet.length; i++) {
+        const v = wet[i] * f;
+        wet[i] = v < 0.01 ? 0 : v;
+      }
+      wetEnergy *= f;
+      if (wetEnergy < 0.01) wetEnergy = 0;
     },
   };
 }
@@ -71,7 +103,7 @@ function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
   const bot = new Bot(world, stats);
   bot.x = world.W / 2; bot.y = world.H / 2; bot.heading = -Math.PI / 2;
   const dust = new DustSystem(world);
-  dust.spawnLevel(def.dirtCount, def.theme, stats);
+  dust.spawnLevel(def.dirtCount, def.theme, stats, def); // 4th arg: bigShare/debrisShare
 
   let t = 0, dist = 0, clogs = 0, dumps = 0, val = 0, wasFull = false;
   const ai = { cur: null, bestD: 0, stall: 0, skip: new Set(), wp: null, wpFor: null };
@@ -88,7 +120,13 @@ function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
     const px = bot.x, py = bot.y;
     bot.update(dt, input);
     dist += Math.hypot(bot.x - px, bot.y - py);
-    dust.update(dt, bot, stats, { onCollect: (v) => { val += v; } });
+    // Heavy-dust drag (mirrors game.js): motor vs mass in the suction field
+    if (dust.dragMass > 0) {
+      bot.speedMult = stats.motor / (stats.motor + BALANCE.drag.motorCost * dust.dragMass);
+      bot.strain = 1 - bot.speedMult;
+    } else { bot.speedMult = 1; bot.strain = 0; }
+    dust.update(dt, bot, stats, { onCollect: (v) => { val += v; } }, world);
+    world.updateWet(dt);
 
     if (bot.bin > 0 && Math.hypot(bot.x - dock.x, bot.y - dock.y) < dock.triggerR) {
       const v = bot.dumpBin();
@@ -121,14 +159,14 @@ function simulateLevel(botId, levelN, scenario, seed, timeCap = 240) {
 }
 
 // ---- run the matrix -------------------------------------------------------
-const LEVELS = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34];
-const BOTS = ['roomba', 'mi', 'shark'];
+const LEVELS = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 40, 52];
+const BOTS = ['roomba', 'mi', 'shark', 'mop', 'hog', 'zippy'];
 const SCENARIOS = ['base', 'mid', 'maxed'];
 const REPS = 3;
 
 function mean(a) { return a.reduce((s, x) => s + x, 0) / a.length; }
 
-console.log('=== level clear times (s), mean of', REPS, 'runs x 12 levels (L1..L34) ===\n');
+console.log('=== level clear times (s), mean of', REPS, 'runs x 14 levels (L1..L52) ===\n');
 for (const scenario of SCENARIOS) {
   const rows = {};
   for (const b of BOTS) {

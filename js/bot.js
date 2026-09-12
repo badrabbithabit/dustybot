@@ -16,6 +16,8 @@ export class Bot {
     this.vx = 0; this.vy = 0;
     this.bin = 0;
     this.full = false;
+    this.speedMult = 1;  // set by game.js from heavy-dust drag (1 = no drag)
+    this.strain = 0;     // 1 - speedMult, for the wobble visual + HUD
     this.boostCd = 0;
     this.boostDur = 0;
     this.boosting = false;
@@ -102,15 +104,24 @@ export class Bot {
     this.boosting = this.boostDur > 0;
 
     const clogWeight = this.full ? 1 / BALANCE.bin.clogWeightMult : 1;
-    const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight;
+    // heavy-dust drag: game.js sets speedMult = motor / (motor + cost * dragMass)
+    const dragWeight = this.speedMult != null ? this.speedMult : 1;
+    const speed = s.speed * (this.boosting ? BALANCE.bot.boostMult : 1) * clogWeight * dragWeight;
 
     // velocity from current heading, then integrate with collision
     this.vx = Math.sin(this.heading) * speed * mag;
     this.vy = -Math.cos(this.heading) * speed * mag;   // heading 0 = up on screen
     this._hitWall = false;
     this._nx = 0; this._ny = 0;
+    const mx0 = this.x, my0 = this.y;
     this._moveAxis('x', this.vx * dt);
     this._moveAxis('y', this.vy * dt);
+
+    // mopping bot: wet trail under the body (fades over time, soaks heavy motes)
+    if (this.botDef.mop && this.world && this.world.stampWet) {
+      const moved = Math.hypot(this.x - mx0, this.y - my0);
+      if (moved > 1e-3) this.world.stampWet(this.x, this.y, moved * BALANCE.mop.stampRate);
+    }
 
     // Wall bounce (Roomba-style reflection). On a FRESH impact, compute the
     // mirror-reflection heading and steer toward it. The bounce stays active
@@ -197,10 +208,16 @@ export class Bot {
     c.fill();
     c.save();
     c.translate(p.x, p.y);
-    c.rotate(this.heading);
+    // heavy-dust strain: the bot visibly labors when wading through thick dust
+    const wobble = this.strain > 0.03
+      ? Math.sin(this._brush * 2) * 0.05 * Math.min(1, this.strain * 3) : 0;
+    c.rotate(this.heading + wobble);
     switch (this.botDef.shape) {
       case 'lidar': this._drawMi(c, R); break;
       case 'shark': this._drawShark(c, R); break;
+      case 'mop': this._drawMop(c, R); break;
+      case 'tank': this._drawHog(c, R); break;
+      case 'hover': this._drawZippy(c, R); break;
       default: this._drawRoomba(c, R);
     }
     c.restore();
@@ -307,6 +324,82 @@ export class Bot {
     c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.04); c.stroke();
     c.beginPath(); c.arc(0, -R * 0.62, Math.max(1, R * 0.07), 0, Math.PI * 2);
     c.fillStyle = this.full ? PAL.danger : PAL.blue; c.fill();
+    this._drawGlint(c, R);
+  }
+
+  // ---- SUDS mop: blue disc, small water tank, big spinning mop pad in front ----
+  _drawMop(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 2);
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.92, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // water tank (small rear cap)
+    c.beginPath(); c.arc(0, R * 0.5, R * 0.26, 0, Math.PI * 2);
+    c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.05); c.stroke();
+    // big spinning mop pad in front (extends past the body, like a real mop vac)
+    c.save();
+    c.translate(0, -R * 0.62);
+    c.rotate(this._brush * 1.5);
+    c.beginPath(); c.arc(0, 0, R * 0.44, 0, Math.PI * 2);
+    c.fillStyle = '#bfeaff'; c.fill();
+    c.strokeStyle = col.body; c.lineWidth = Math.max(1.5, R * 0.05);
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2 + 0.4;
+      c.beginPath();
+      c.moveTo(Math.cos(a) * R * 0.08, Math.sin(a) * R * 0.08);
+      c.lineTo(Math.cos(a) * R * 0.38, Math.sin(a) * R * 0.38);
+      c.stroke();
+    }
+    c.restore();
+    this._drawGlint(c, R);
+  }
+
+  // ---- BULLDOG tank: chunky disc with a treaded rim and a heavy bumper ----
+  _drawHog(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 2);
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.94, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // treaded rim (segments crawl with the brush spin)
+    for (let k = 0; k < 10; k++) {
+      const a = k * Math.PI / 5 + this._brush * 0.15;
+      c.fillStyle = col.bodyDk;
+      c.fillRect(Math.cos(a) * R * 0.84 - R * 0.07,
+                 Math.sin(a) * R * 0.84 - R * 0.07, R * 0.14, R * 0.14);
+    }
+    // heavy front bumper
+    c.beginPath(); c.arc(0, 0, R * 0.94, Math.PI * 1.1, Math.PI * 1.9);
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(3, R * 0.16); c.stroke();
+    // single determined eye
+    c.beginPath(); c.arc(0, -R * 0.35, R * 0.14, 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.ok; c.fill();
+    this._drawGlint(c, R);
+  }
+
+  // ---- ZIP hover: sleek gold disc floating on a glow ring, speed stripes ----
+  _drawZippy(c, R) {
+    const col = this.botDef.colors;
+    const body = this.full ? col.bodyDk : col.body;
+    this._drawBrushes(c, R, 0);
+    // hover glow (it floats above the floor)
+    c.beginPath(); c.arc(0, 0, R * 1.08, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,210,77,0.16)'; c.fill();
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.94, 0, Math.PI * 2); c.fillStyle = body; c.fill();
+    // sleek center lens
+    c.beginPath(); c.arc(0, 0, R * 0.34, 0, Math.PI * 2);
+    c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.06); c.stroke();
+    // speed stripes
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.06);
+    c.beginPath(); c.moveTo(-R * 0.6, R * 0.25); c.lineTo(R * 0.6, R * 0.25); c.stroke();
+    c.beginPath(); c.moveTo(-R * 0.45, R * 0.48); c.lineTo(R * 0.45, R * 0.48); c.stroke();
+    // status LED
+    c.beginPath(); c.arc(0, -R * 0.55, Math.max(1.5, R * 0.09), 0, Math.PI * 2);
+    c.fillStyle = this.full ? PAL.danger : PAL.ok; c.fill();
     this._drawGlint(c, R);
   }
 }

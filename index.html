@@ -33,6 +33,7 @@
       <div id="bin-wrap" title="Dust bin — drive to the dock to dump"><div id="bin-fill"></div><span>bin</span></div>
     </div>
   </div>
+  <div id="drag-hud" class="hidden"></div>
   <button id="btn-boost" class="touch-btn">BOOST</button>
   <button id="btn-mute" class="corner-btn" style="top:env(safe-area-inset-top)">♪</button>
 </div>
@@ -42,6 +43,7 @@
   <div id="intro-theme"></div>
   <div id="intro-sub"></div>
   <div id="intro-obj"></div>
+  <div id="intro-gear"></div>
 </div>
 
 <!-- Joystick -->
@@ -61,7 +63,7 @@
 <!-- Character select -->
 <div id="screen-select" class="screen hidden">
   <h2>PICK YOUR BOT</h2>
-  <p class="tag">three machines · three play styles</p>
+  <p class="tag">six machines · six play styles</p>
   <div id="bot-list"></div>
   <button id="btn-start" class="big">START RUN</button>
   <button id="btn-back-select" class="big small">back</button>
@@ -70,7 +72,9 @@
 <!-- Hangar / meta shop -->
 <div id="screen-hangar" class="screen hidden">
   <h2>HANGAR</h2>
-  <div id="hangar-shards"><span id="hangar-shards">0</span> shards</div>
+  <div id="hangar-cv-wrap"><canvas id="hangar-cv" width="520" height="280"></canvas></div>
+  <div id="hangar-idle" class="locked"></div>
+  <div id="hangar-shards-wrap"><span id="hangar-shards">0</span> shards</div>
   <div id="meta-list"></div>
   <button id="btn-back-menu" class="big small">back</button>
 </div>

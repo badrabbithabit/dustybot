@@ -16,20 +16,51 @@ export const BALANCE = {
   dirt: {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
-    base: 40,                       // dirt count at level 1 (raised 26->40: denser start)
-    perLevel: 6,                    // + dirt per level (scales with level number)
-    perRotation: 12,                // + dirt per full theme rotation (extra ramp)
-    max: 160,
+    base: 44,                       // dirt count at level 1 (per IDLE_PLAN: denser start)
+    perLevel: 5,                    // + dirt per level (scales with level number)
+    perRotation: 10,                // + dirt per full theme rotation (extra ramp)
+    max: 150,                       // hard cap — levels go endless past this
+    heavyStep: 0.02,                // + heavy-mote share per rotation (difficulty gears)
+    heavyCap: 0.42,                 // max share of big+debris motes at high levels
+    // New dirt types, HARD-INTRODUCED per gear (index = rotation, capped at 3).
+    // Each is a new *behavior*, not just more weight (see dust.js).
+    staticShares: [0, 0.05, 0.08, 0.10],   // repels suction; brush/mop are the counters
+    tarShares:    [0, 0, 0.05, 0.06],      // super-heavy, oozes; drivetrain/mop answer it
+    puffShares:   [0, 0, 0, 0.06],         // splits into 3 motes on pickup
+    tarSpeed: 0.15,                       // tar ooze speed (u/s)
   },
   shardPerDust: 0.05,
   shardPerSecond: 0.05,             // passive shard trickle
   shardPerLevel: 2,
   metaCost: (base, lvl) => Math.round(base * Math.pow(1.6, lvl)),
-  offline: { capHours: 8, basePerHour: 0.8, metaPerHour: 0.05 },
+  // Offline shards/hour = basePerHour * (1 + polishPerHour*polish) * (1 + levelPerHour*(bestLevel-1)),
+  // capped at capHours away. Pure math in offlineGain(save).
+  offline: { capHours: 8, basePerHour: 1.2, polishPerHour: 0.05, levelPerHour: 0.12 },
   dock: { x: 22, y: 3.6, triggerR: 1.9 },
+  // Live "auto-bay" idle in the hangar (visual sim; shards accrue at a flat rate)
+  hangar: {
+    motesPerMin: 1,                 // ambient mote spawn rate for the visual
+    maxVisible: 6,
+    basePerHour: 0.3,               // shards/hr at bestLevel 1 (scaled by autobay level)
+    levelPerHour: 0.1,
+  },
+  // Mote mass: heavy motes drag the bot; mopping wets the floor to lighten them.
+  moteMass: { dust: 0.05, big: 1.0, gold: 0.6, debris: 1.4, static: 0.25, tar: 3.0, puff: 0.05 },
+  drag: {
+    heavyMass: 0.3,                 // motes at/above this mass count as heavy
+    motorCost: 0.12,                // speedMult = motor / (motor + cost * sumHeavy)
+  },
+  mop: {
+    wetThresh: 0.25,                // wetness at which a heavy mote is "soaked"
+    massDiv: 2,                     // soaked heavy motes: effective mass / 2
+    valueMult: 1.5,                 // soaked motes pay 1.5x dust value
+    stampRate: 0.55,                // wetness added per world unit of mop travel
+  },
+  gearEvery: 12,                    // one difficulty "gear" = one theme rotation (12 levels)
+  shardPerLevelPerLevel: 0.05,      // level-clear shards: base + this * (level-1)
 };
 
-// ---------------- Character select: 3 bots based on real robot vacuums ----------------
+// ---------------- Character select: 6 bots (3 start unlocked, 3 unlock by best level) ----------------
 // `stats` are the STARTING run stats for that bot (meta upgrades still multiply on top
 // in makeRunStats, as before). Each bot has its own canvas-drawn look (see bot.js)
 // and its own color set.
@@ -37,7 +68,7 @@ export const BOTS = {
   // iRobot Roomba — classic round disc, two counter-rotating side brushes,
   // red body, front IR "eye" bump. All-rounder: balanced, reliable.
   roomba: {
-    name: 'ROOMBA', icon: '🔴', shape: 'round',
+    name: 'ROOMBA', icon: '🔴', shape: 'round', motor: 1.0,
     sub: 'iRobot classic · all-rounder',
     blurb: 'Balanced. Reliable. The one that started it all.',
     colors: { rim: '#4d1f1a', body: '#ff6b57', bodyDk: '#c23c2c', dome: '#241a17', domeHi: '#ffab8f' },
@@ -50,7 +81,7 @@ export const BOTS = {
   // Xiaomi Mi Robot — slim disc with a single round LiDAR turret on top,
   // two side brushes, blue body. Faster + better turn rate + bigger bin.
   mi: {
-    name: 'MI ROBOT', icon: '🔵', shape: 'lidar',
+    name: 'MI ROBOT', icon: '🔵', shape: 'lidar', motor: 1.0,
     sub: 'Xiaomi Mi · LiDAR scout',
     blurb: 'Quick, nimble, and its LiDAR sees around corners. Big hopper.',
     colors: { rim: '#12304d', body: '#5cc8ff', bodyDk: '#1f5f8a', dome: '#0e1a28', domeHi: '#a8e6ff' },
@@ -63,7 +94,7 @@ export const BOTS = {
   // Shark robot vacuum — tall disc with a big round suction port and
   // "self-empty" hopper, purple body. High suction, slower, smaller bin.
   shark: {
-    name: 'SHARK', icon: '🟣', shape: 'shark',
+    name: 'SHARK', icon: '🟣', shape: 'shark', motor: 1.0,
     sub: 'Shark · self-empty powerhead',
     blurb: 'Brutal suction, and a magnet that sings once upgraded. But slow, and the hopper runs full fast.',
     colors: { rim: '#2c1447', body: '#c07bff', bodyDk: '#7a3fae', dome: '#190c28', domeHi: '#dcb9ff' },
@@ -73,8 +104,46 @@ export const BOTS = {
       binMax: 90, boostCdMult: 0.85, shardMult: 1.0,
     },
   },
+  // SUDS — water-tank mop with a wide spinning pad. Leaves a wet trail that
+  // "soaks" heavy motes: they get half their mass back off the bot and pay 1.5x.
+  mop: {
+    name: 'SUDS', icon: '🧽', shape: 'mop', motor: 1.0, mop: true, unlockLevel: 5,
+    sub: 'Suds · wet mop',
+    blurb: 'Mops, not just vacuums. Its wet trail loosens heavy dust so it sucks up easy.',
+    colors: { rim: '#0f3a4d', body: '#5cc8ff', bodyDk: '#1f7fae', dome: '#0e2430', domeHi: '#a8e6ff' },
+    stats: {
+      suction: 0.8, suctionRange: 2.4, pickupRadius: 1.6, brushLevel: 0,
+      speed: 5.6, turnRate: 5.0, magnetRange: 0.0,
+      binMax: 110, boostCdMult: 1.0, shardMult: 1.0,
+    },
+  },
+  // BULLDOG — heavy hauler with a 2.0 motor: heavy-dust drag barely slows it.
+  hog: {
+    name: 'BULLDOG', icon: '🐗', shape: 'tank', motor: 2.0, unlockLevel: 12,
+    sub: 'Bulldog · heavy hauler',
+    blurb: 'Huge motor and a 150-unit hopper. Heavy dust barely slows it down.',
+    colors: { rim: '#3d2410', body: '#8a5a2b', bodyDk: '#5c3a1a', dome: '#241708', domeHi: '#d9a35c' },
+    stats: {
+      suction: 1.1, suctionRange: 2.8, pickupRadius: 1.8, brushLevel: 0,
+      speed: 5.6, turnRate: 4.6, magnetRange: 0.8,
+      binMax: 150, boostCdMult: 0.9, shardMult: 1.0,
+    },
+  },
+  // ZIP — hover skid: fastest bot, hover seals make it immune to floor drag,
+  // and it converts dust to shards +10% better.
+  zippy: {
+    name: 'ZIP', icon: '⚡', shape: 'hover', motor: 99, unlockLevel: 20,
+    sub: 'Zip · hover skid',
+    blurb: 'Skims on hover seals — floor drag never touches it. Fast, and rich in shards.',
+    colors: { rim: '#4d3a0f', body: '#ffd24d', bodyDk: '#c98f2a', dome: '#2a220c', domeHi: '#ffe9a3' },
+    stats: {
+      suction: 1.0, suctionRange: 3.0, pickupRadius: 1.6, brushLevel: 0,
+      speed: 7.4, turnRate: 6.8, magnetRange: 1.2,
+      binMax: 95, boostCdMult: 0.8, shardMult: 1.1,
+    },
+  },
 };
-export const BOT_ORDER = ['roomba', 'mi', 'shark'];
+export const BOT_ORDER = ['roomba', 'mi', 'shark', 'mop', 'hog', 'zippy'];
 
 // ---------------- In-run upgrades (1 of 3 picks on level-up) ----------------
 export const RUN_UPGRADES = [
@@ -89,9 +158,12 @@ export const RUN_UPGRADES = [
       s.brushLevel = Math.min(5, (s.brushLevel || 0) + 1);
       if (s.brushLevel >= 2) s.pickupRadius *= 1.2;
     } },
-  { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 3,
+  { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 4,
     desc: lvl => `+10% speed & turning (L${lvl})`,
     apply: (s, n) => { s.speed *= 1.10; s.turnRate *= 1.10; } },
+  { id: 'traction', name: 'Heavy Motor', icon: '🐗', max: 4, weight: 4,
+    desc: lvl => `+50% motor (L${lvl}) — shrugs off heavy-dust drag`,
+    apply: (s, n) => { s.motor *= 1.5; } },
   { id: 'bin', name: 'Extra Hopper', icon: '📦', max: 5, weight: 3,
     desc: lvl => `+25 bin capacity (L${lvl})`,
     apply: (s, n) => { s.binMax += 25; } },
@@ -125,6 +197,10 @@ export const META_UPGRADES = [
     desc: lvl => `+8 max bin (L${lvl})` },
   { id: 'meta_magnet', name: 'Magnet Coil', icon: '🧲', base: 40, max: 8,
     desc: lvl => `+4% pickup radius (L${lvl})` },
+  { id: 'meta_autobay', name: 'Auto-Bay', icon: '🛰️', base: 60, max: 3,
+    desc: lvl => `Hangar auto-bay: idle shards while in the hangar (${['x0', 'x1', 'x2', 'x4'][lvl]})` },
+  { id: 'meta_drivetrain', name: 'Drivetrain Kit', icon: '🐗', base: 40, max: 4,
+    desc: lvl => `+25% motor (L${lvl}) — resists heavy-dust drag` },
   { id: 'meta_ap', name: 'Auto-Pilot Sensor', icon: '🤖', base: 100, max: 1,
     desc: () => 'Unlocks offline shard collection' },
   { id: 'meta_polish', name: 'Shard Polisher', icon: '✨', base: 60, max: 10,
@@ -160,6 +236,8 @@ export function makeRunStats(meta, botId) {
   s.shardMult *= 1 + 0.03 * L('meta_polish');
   s.goldChance += 0.03 * L('meta_gold');
   s.suctionRange *= 1 + 0.06 * L('meta_mote');
+  // Heavy-mote drag resistance: bot base motor x Drivetrain Kit (+25% each).
+  s.motor = (bot.motor || 1) * (1 + 0.25 * L('meta_drivetrain'));
   return s;
 }
 
@@ -202,6 +280,30 @@ export function metaCost(id, lvl) {
   const u = META_UPGRADES.find(x => x.id === id);
   if (!u) return Infinity;
   return BALANCE.metaCost(u.base, lvl);
+}
+
+// ---- Offline / hangar idle (IDLE_PLAN.md) ---------------------------------
+// Shards gained while the game was closed: scales with Shard Polisher + best
+// level cleared, capped at BALANCE.offline.capHours away. Gated on meta_ap
+// (Auto-Pilot Sensor) — that check lives in main.js; this is the pure math.
+export function offlineGain(save) {
+  const o = BALANCE.offline;
+  const hours = Math.min(o.capHours, Math.max(0, (Date.now() - save.lastSeen) / 3600_000));
+  if (hours <= 0) return 0;
+  const polish = (save.meta && save.meta.meta_polish) || 0;
+  const best = Math.max(1, save.bestLevel || 0);
+  const rate = o.basePerHour * (1 + o.polishPerHour * polish) * (1 + o.levelPerHour * (best - 1));
+  return hours * rate;
+}
+
+// Shards/hr while the hangar screen is open with the auto-bay built.
+// autobay L0 = bay not built (0/hr); L1 / L2 / L3 = x1 / x2 / x4 the base rate.
+export function hangarRate(save) {
+  const h = BALANCE.hangar;
+  const lv = (save.meta && save.meta.meta_autobay) || 0;
+  const mult = [0, 1, 2, 4][lv] || 0;
+  const best = Math.max(1, save.bestLevel || 0);
+  return h.basePerHour * (1 + h.levelPerHour * (best - 1)) * mult;
 }
 
 // ===========================================================================
@@ -270,5 +372,23 @@ export function levelDef(level, runSeed = 0) {
   const obstacles = room.obstacles.map(o => ({ ...o }));
   const dirtCount = Math.min(BALANCE.dirt.max,
     BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation);
-  return { level, themeKey, theme, slot, rot, roomName: room.name, roomSub: room.sub, obstacles, dirtCount };
+  // Heavy-mote share (big + debris) climbs one "gear" per rotation: late
+  // levels demand mopper / heavy-motor builds instead of just grinding.
+  const heavyShare = Math.min(BALANCE.dirt.heavyCap, 0.26 + rot * BALANCE.dirt.heavyStep);
+  const bigShare = heavyShare * 0.55;
+  const debrisShare = heavyShare - bigShare;
+  // New dirt types: one new behavior per gear boundary (see BALANCE.dirt shares).
+  const g = Math.min(3, rot);
+  const staticShare = BALANCE.dirt.staticShares[g];
+  const tarShare = BALANCE.dirt.tarShares[g];
+  const puffShare = BALANCE.dirt.puffShares[g];
+  const newDirt = [];
+  if (level === 13) newDirt.push('⚡ STATIC — repels suction. Brush it in or mow it down first.');
+  if (level === 25) newDirt.push('🟫 TAR — super-heavy, and it keeps creeping. Motor power wins.');
+  if (level === 37) newDirt.push('☁️ PUFF — splits into 3 motes when vacuumed.');
+  return {
+    level, themeKey, theme, slot, rot, roomName: room.name, roomSub: room.sub,
+    obstacles, dirtCount, bigShare, debrisShare, staticShare, tarShare, puffShare, newDirt,
+    gearUp: level > 1 && pos % BALANCE.gearEvery === 0,
+  };
 }

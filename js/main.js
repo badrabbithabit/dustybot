@@ -1,7 +1,7 @@
 // main.js — bootstrap: save/load, offline calc, main loop, UI wiring.
 import { World } from './world.js';
 import { Game } from './game.js';
-import { BALANCE } from './upgrades.js';
+import { BALANCE, offlineGain as computeOffline } from './upgrades.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
 
@@ -23,7 +23,7 @@ addEventListener('error', ev => __showErr('window.onerror', ev.error || ev.messa
 addEventListener('unhandledrejection', ev => __showErr('unhandledrejection', ev.reason));
 
 function loadSave() {
-  let s = { shards: 0, meta: {}, lastSeen: Date.now(), bestTime: 0, runs: 0, bestShards: 0 };
+  let s = { shards: 0, meta: {}, lastSeen: Date.now(), bestTime: 0, runs: 0, bestShards: 0, bestLevel: 0, idle: { motes: 0, ms: 0 } };
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
@@ -38,23 +38,11 @@ function writeSave(save) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ }
 }
 
-// ---- offline shard collection (requires Auto-Pilot meta) ----
-function computeOffline(save) {
-  const now = Date.now();
-  const dt = now - (save.lastSeen || now);
-  if (dt < 60_000) return 0;
-  if (!save.meta.meta_ap) return 0;
-  const capMs = BALANCE.offline.capHours * 3600_000;
-  const t = Math.min(dt, capMs);
-  const rate = BALANCE.offline.basePerHour * (1 + BALANCE.offline.metaPerHour * ((save.meta.meta_polish) || 0));
-  return Math.floor(rate * (t / 3600_000));
-}
-
 const canvas = document.getElementById('game');
 const world = new World(canvas);
 const save = loadSave();
 
-const offlineGain = computeOffline(save);
+const offlineGain = save.meta.meta_ap ? computeOffline(save) : 0; // Auto-Pilot gates the trickle
 if (offlineGain > 0) {
   save.shards += offlineGain;
   save._offlineGain = offlineGain;
@@ -93,12 +81,14 @@ addEventListener('mouseup', () => setBoost(false));
 game.toMenu();
 
 // ---- main loop ----
+const hangarCv = $('hangar-cv'); // null until the element exists; render() is null-safe
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
   world.render(game);
+  if (game._screen === 'hangar' && game.hangar) game.hangar.render(hangarCv);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

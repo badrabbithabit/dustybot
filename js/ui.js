@@ -43,6 +43,14 @@ export function showLevelIntro(def, level) {
   $('intro-theme').textContent = `${def.theme.icon} ${room}`;
   $('intro-sub').textContent = `${def.theme.name}${def.roomSub ? ' · ' + def.roomSub : ''} · level ${level}`;
   $('intro-obj').textContent = `Clear all ${def.dirtCount} motes of dirt`;
+  const gear = $('intro-gear');
+  if (gear) {
+    if (def.gearUp) {
+      gear.textContent = (def.newDirt && def.newDirt.length)
+        ? def.newDirt.join(' ')
+        : '⚙ GEAR UP — HEAVIER DUST INBOUND';
+    } else gear.textContent = '';
+  }
   el.classList.add('show');
 }
 export function hideLevelIntro() {
@@ -92,6 +100,17 @@ export function buildHangar(save, onBuy) {
     row.appendChild(btn);
     list.appendChild(row);
   }
+}
+
+// Live idle line at the top of the hangar (updated every frame from game.js).
+export function setHangarIdle(info) {
+  const el = $('hangar-idle');
+  if (!el) return;
+  const h = Math.floor(info.time / 60), m = Math.floor(info.time % 60);
+  el.textContent = info.locked
+    ? '🔒 Auto-Bay offline — buy it below to start the idle drip'
+    : `🤖 ${info.motes} motes · ${h}:${String(m).padStart(2, '0')} · +${info.rate.toFixed(2)} ✦/hr`;
+  el.classList.toggle('locked', !!info.locked);
 }
 
 export function buildPicks(picks, stats, onPick) {
@@ -164,6 +183,44 @@ function drawPortrait(cv, botId) {
     c.beginPath(); c.arc(0, -R * 0.62, R * 0.16, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
     c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.04); c.stroke();
     c.beginPath(); c.arc(0, -R * 0.62, Math.max(1, R * 0.07), 0, Math.PI * 2); c.fillStyle = '#3fb6ff'; c.fill();
+  } else if (d.shape === 'mop') {
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.9, 0, Math.PI * 2); c.fillStyle = col.body; c.fill();
+    c.beginPath(); c.arc(0, R * 0.35, R * 0.30, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1, R * 0.05); c.stroke();
+    c.beginPath(); c.arc(0, -R * 0.62, R * 0.44, 0, Math.PI * 2); c.fillStyle = '#bfeaff'; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.07); c.stroke();
+    for (let k = 0; k < 4; k++) {
+      const a = brush + k * (Math.PI / 2);
+      c.beginPath();
+      c.moveTo(0, -R * 0.62);
+      c.lineTo(Math.cos(a) * R * 0.40, -R * 0.62 + Math.sin(a) * R * 0.40);
+      c.strokeStyle = col.bodyDk; c.lineWidth = Math.max(1, R * 0.05); c.stroke();
+    }
+  } else if (d.shape === 'tank') {
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    for (let k = 0; k < 10; k++) {
+      const a = k / 10 * Math.PI * 2 + brush * 0.15;
+      c.beginPath(); c.arc(Math.cos(a) * R * 0.84, Math.sin(a) * R * 0.84, R * 0.13, 0, Math.PI * 2);
+      c.fillStyle = col.bodyDk; c.fill();
+    }
+    c.beginPath(); c.arc(0, 0, R * 0.72, 0, Math.PI * 2); c.fillStyle = col.body; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.72, Math.PI * 1.1, Math.PI * 1.9);
+    c.strokeStyle = col.rim; c.lineWidth = Math.max(2, R * 0.14); c.stroke();
+    c.beginPath(); c.arc(0, 0, R * 0.3, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.06); c.stroke();
+    c.beginPath(); c.arc(0, 0, R * 0.12, 0, Math.PI * 2); c.fillStyle = col.domeHi; c.fill();
+  } else if (d.shape === 'hover') {
+    c.beginPath(); c.arc(0, 0, R * 1.08, 0, Math.PI * 2); c.fillStyle = 'rgba(255,210,77,0.16)'; c.fill();
+    c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
+    c.beginPath(); c.arc(0, 0, R * 0.92, 0, Math.PI * 2); c.fillStyle = col.body; c.fill();
+    c.strokeStyle = col.bodyDk; c.lineWidth = Math.max(2, R * 0.08);
+    c.beginPath(); c.moveTo(-R * 0.5, R * 0.15); c.lineTo(R * 0.1, R * 0.35); c.stroke();
+    c.beginPath(); c.moveTo(-R * 0.35, -R * 0.1); c.lineTo(R * 0.35, R * 0.05); c.stroke();
+    c.beginPath(); c.arc(0, 0, R * 0.34, 0, Math.PI * 2); c.fillStyle = col.dome; c.fill();
+    c.strokeStyle = col.domeHi; c.lineWidth = Math.max(1.5, R * 0.06); c.stroke();
+    c.beginPath(); c.arc(0, 0, R * 0.12, 0, Math.PI * 2); c.fillStyle = col.domeHi; c.fill();
+    c.beginPath(); c.arc(0, -R * 0.55, Math.max(1.5, R * 0.07), 0, Math.PI * 2); c.fillStyle = '#4dffa6'; c.fill();
   } else {
     c.beginPath(); c.arc(0, 0, R, 0, Math.PI * 2); c.fillStyle = col.rim; c.fill();
     c.beginPath(); c.arc(0, 0, R * 0.92, 0, Math.PI * 2); c.fillStyle = body; c.fill();
@@ -194,8 +251,9 @@ export function buildBots(save, selectedId, onPick) {
   list.innerHTML = '';
   for (const id of BOT_ORDER) {
     const d = BOTS[id];
+    const locked = (d.unlockLevel || 0) > (save.bestLevel || 0);
     const card = document.createElement('div');
-    card.className = 'bot-card' + (id === selectedId ? ' selected' : '');
+    card.className = 'bot-card' + (id === selectedId ? ' selected' : '') + (locked ? ' locked' : '');
     const port = document.createElement('div');
     port.className = 'bot-portrait';
     const cv = document.createElement('canvas');
@@ -212,12 +270,15 @@ export function buildBots(save, selectedId, onPick) {
     }
     info.innerHTML = `
       <div class="bot-name">${d.icon} ${d.name}</div>
-      <div class="bot-sub">${d.sub}</div>
-      <div class="bot-blurb">${d.blurb}</div>
+      <div class="bot-sub">${locked ? `🔒 Unlocks at level ${d.unlockLevel}` : d.sub}</div>
+      <div class="bot-blurb">${locked ? `Reach level ${d.unlockLevel} in any run to free this chassis.` : d.blurb}</div>
       <div class="bot-bars">${bars}</div>`;
     card.appendChild(port);
     card.appendChild(info);
-    card.onclick = () => { onPick(id); };
+    card.onclick = () => {
+      if (locked) { toast(`Reach level ${d.unlockLevel} to unlock ${d.icon} ${d.name}.`); return; }
+      onPick(id);
+    };
     list.appendChild(card);
   }
 }

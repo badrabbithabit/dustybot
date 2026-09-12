@@ -28,14 +28,14 @@ test('rollPicks: 3 unique valid picks, none at max', () => {
 
 test('rollPicks: terminates when pool nearly drained (P0-5 regression)', () => {
   // Freeze bug: old `continue`-on-seen looped forever when <3 distinct
-  // upgrades remained. Level everything to max-1, then max out 8 of 10.
+  // upgrades remained. Level everything to max-1, then max out all but 2.
   const s = fresh();
   for (const u of RUN_UPGRADES) {
     for (let i = 0; i < u.max - 1; i++) applyPick(s, u.id);
   }
-  const picksA = rollPicks(s);              // 10 distinct left -> 3
+  const picksA = rollPicks(s);              // everything left -> 3
   assert.equal(picksA.length, 3);
-  for (let i = 0; i < 8; i++) applyPick(s, RUN_UPGRADES[i].id); // 2 left
+  for (let i = 0; i < RUN_UPGRADES.length - 2; i++) applyPick(s, RUN_UPGRADES[i].id); // 2 left
   const picksB = rollPicks(s);              // must RETURN, with <=2
   assert.ok(picksB.length <= 2, 'returns whatever remains, no hang');
   assert.equal(new Set(picksB.map(p => p.id)).size, picksB.length, 'still unique');

@@ -22,6 +22,9 @@ export const PAL = {
   dirt1:     '#c9a878',  // fine dust
   dirt2:     '#a9895d',  // big clump
   debris:    '#7d5f43',  // debris
+  staticCh:  '#c9a0ff',  // static clump (new dirt, gear 2+)
+  tar:       '#4a3826',  // creeping tar (new dirt, gear 3+)
+  puff:      '#e9ddc8',  // dust bunny (new dirt, gear 4+)
   dustShine: '#f2ddbb',
   shadow:    'rgba(4, 7, 16, 0.5)',
   fog:       'rgba(11, 16, 32, 0.55)',

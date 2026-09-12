@@ -4,7 +4,8 @@
 // set of themed dirt scattered at start (no regen); the dirt count scales
 // with the level number. Clear a level by vacuuming every mote AND dumping
 // it all at the dock, then pick 1 of 3 upgrades. NO failure mode.
-import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal } from './upgrades.js';
+import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as metaCostLocal, hangarRate } from './upgrades.js';
+import { HangarIdle } from './hangar.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
 import { Controls } from './controls.js';
@@ -31,6 +32,8 @@ export class Game {
     this._levelDirtTotal = 0;
     this._runSeed = 0;      // per-run layout seed (set in newRun)
     this._def = null;       // cached levelDef for the current level
+    this._screen = 'menu';  // which menu screen is visible (hangar idle needs it)
+    this.hangar = null;     // live HangarIdle sim while the hangar screen is open
 
     this.controls.onTap = (sx, sy) => {
       if (this.state !== 'run') return null;
@@ -42,6 +45,7 @@ export class Game {
   }
 
   showSelect() {
+    this._screen = 'select';
     const onPick = (id) => {
       this.selectedBot = id;
       this.save.bot = id;
@@ -57,6 +61,8 @@ export class Game {
   }
 
   newRun() {
+    this._screen = 'run';
+    this.hangar = null;   // a real run replaces the idle bay
     this.save.runs = (this.save.runs || 0) + 1;   // count runs actually started
     this.onSave && this.onSave();
     this.stats = makeRunStats(this.save.meta, this.selectedBot);
@@ -95,7 +101,7 @@ export class Game {
     // scatter the level's fixed themed dirt (does not regenerate)
     this._levelDirtTotal = def.dirtCount;
     this._cleared = 0;   // reset the dumped-dirt counter for this level
-    this.dust.spawnLevel(def.dirtCount, def.theme, this.stats);
+    this.dust.spawnLevel(def.dirtCount, def.theme, this.stats, def);
 
     this.state = 'intro';
     this._introTimer = 1.6;
@@ -103,6 +109,8 @@ export class Game {
   }
 
   update(dt) {
+    // The hangar bay auto-vacuums while its screen is open (idle channel #2).
+    if (this.hangar && this._screen === 'hangar') this._updateHangar(dt);
     if (this.state === 'intro') {
       this._introTimer -= dt;
       if (this._introTimer <= 0) {
@@ -130,7 +138,14 @@ export class Game {
       onSuck: () => Audio.sfx.suck(),
       onGold: () => Audio.sfx.gold(),
       onCollect: (v) => this._onCollect(v),
-    });
+    }, this.world);
+
+    // Heavy-dust drag: motes in the suction field load the motor down.
+    // motor (base bot + Tractor Motor + Drivetrain Kit) vs summed heavy mass.
+    const motor = this.stats.motor;
+    this.bot.speedMult = motor / (motor + BALANCE.drag.motorCost * (this.dust.dragMass || 0));
+    this.bot.strain = 1 - this.bot.speedMult;
+    this.world.updateWet(dt);
 
     // bin-full nudge (bin still caps suction; there is no dirt-death)
     if (this.bot.full && !this._fullWarned) {
@@ -171,6 +186,15 @@ export class Game {
     });
     const btn = document.getElementById('btn-boost');
     if (btn) btn.classList.toggle('cooling', this.bot.boostCd > 0);
+    const drag = document.getElementById('drag-hud');
+    if (drag) {
+      if (this.bot.strain > 0.03) {
+        drag.textContent = `🐗 HEAVY DUST ${Math.round(this.bot.strain * 100)}%`;
+        drag.classList.remove('hidden');
+      } else {
+        drag.classList.add('hidden');
+      }
+    }
   }
 
   _onCollect(val) {
@@ -179,13 +203,15 @@ export class Game {
   }
 
   _levelClear() {
+    // lifetime best level gates bot unlocks (mop @5, hog @12, zippy @20)
+    this.save.bestLevel = Math.max(this.save.bestLevel || 0, this.level);
     // fastest level-1 clear is the menu "best" time
     if (this.level === 1 && (!this.save.bestTime || this.time < this.save.bestTime)) {
       this.save.bestTime = this.time;
     }
     Audio.sfx.clear();
     UI.toast(`Level ${this.level} clear!`, 'good');
-    this._bankShards(BALANCE.shardPerLevel);
+    this._bankShards(BALANCE.shardPerLevel + BALANCE.shardPerLevelPerLevel * (this.level - 1));
     this.onSave && this.onSave();   // persist best stats + banked shards
     this._showPick();
   }
@@ -226,6 +252,14 @@ export class Game {
 
   toMenu() {
     this.state = 'menu';
+    this._screen = 'menu';
+    // Persist hangar idle stats, then tear the sim down.
+    if (this.hangar) {
+      this.save.idle = this.save.idle || { motes: 0, ms: 0 };
+      this.save.idle.motes += this.hangar.collected;
+      this.save.idle.ms += this.hangar.time * 1000;
+      this.hangar = null;
+    }
     this.save.lastSeen = Date.now();
     this.onSave && this.onSave();
     UI.hide('hud'); UI.hide('joy');
@@ -243,6 +277,10 @@ export class Game {
   }
 
   showHangar() {
+    this._screen = 'hangar';
+    // Start (or resume) the little auto-bay sim. It's a pure visual; the
+    // shard economy is the flat hangarRate(save), banked in _updateHangar.
+    if (!this.hangar) this.hangar = new HangarIdle(this.save);
     const buy = (id) => {
       const lvl = this.save.meta[id] || 0;
       const cost = metaCostLocal(id, lvl);
@@ -257,5 +295,22 @@ export class Game {
     };
     UI.showAll(SCREENS, 'screen-hangar');
     UI.buildHangar(this.save, buy);
+    UI.setHangarIdle(this._idleInfo());
+  }
+
+  _idleInfo() {
+    return {
+      motes: this.hangar ? this.hangar.collected : 0,
+      time: this.hangar ? this.hangar.time : 0,
+      rate: hangarRate(this.save),
+      locked: hangarRate(this.save) <= 0,
+    };
+  }
+
+  _updateHangar(dt) {
+    this.hangar.update(dt);
+    const rate = hangarRate(this.save);
+    if (rate > 0) this._bankShards(rate * dt / 3600);
+    UI.setHangarIdle(this._idleInfo());
   }
 }

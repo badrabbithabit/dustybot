@@ -30,6 +30,7 @@ export class World {
     this.theme = { ...DEFAULT_THEME };
     this.obstacles = [];
     this._floorCv = null;
+    this._initWet();           // wet-floor layer (mopping bots)
 
     this._resize();            // safe now: this.theme + this.W/H exist
     addEventListener('resize', () => this._resize());
@@ -41,6 +42,93 @@ export class World {
     this.theme._floor = themeKey || 'residential';
     this.obstacles = obstacles;
     this._buildFloor();
+    this._clearWet();          // fresh level = dry floor
+  }
+
+  // ---------------------------------------------------------------------
+  // Wet-floor layer (mopping bots). A resolution-independent grid holds the
+  // wetness (0..1) per cell; a small canvas is rebuilt from it for drawing.
+  // Heavy motes sitting on wet floor (wetAt >= BALANCE.mop.wetThresh) get
+  // soaked: lighter to pull and worth more. See dust.js.
+  // ---------------------------------------------------------------------
+  _initWet() {
+    this._wetRes = 6;                      // internal px per world unit
+    const gw = Math.ceil(this.W * this._wetRes);
+    const gh = Math.ceil(this.H * this._wetRes);
+    this._wetW = gw; this._wetH = gh;
+    this._wetGrid = new Float32Array(gw * gh);
+    this._wetCv = document.createElement('canvas');
+    this._wetCv.width = gw; this._wetCv.height = gh;
+    this._wetCvCtx = this._wetCv.getContext('2d');
+    this._wetImg = this._wetCvCtx.createImageData(gw, gh);
+    this._wetDirty = false;
+  }
+
+  _clearWet() {
+    if (this._wetGrid) this._wetGrid.fill(0);
+    this._wetDirty = true;
+  }
+
+  // Add wetness in a soft disc of radius `radius` (world units) at (x, y).
+  stampWet(x, y, amt, radius = BALANCE.bot.radius) {
+    if (amt <= 0) return;
+    const res = this._wetRes, gw = this._wetW, gh = this._wetH;
+    const cx = x * res, cy = y * res;
+    const pr = radius * res;
+    const x0 = Math.max(0, Math.floor(cx - pr)), x1 = Math.min(gw - 1, Math.ceil(cx + pr));
+    const y0 = Math.max(0, Math.floor(cy - pr)), y1 = Math.min(gh - 1, Math.ceil(cy + pr));
+    let g = this._wetGrid;
+    for (let yy = y0; yy <= y1; yy++) {
+      const dy = (yy + 0.5 - cy) / pr;
+      for (let xx = x0; xx <= x1; xx++) {
+        const dx = (xx + 0.5 - cx) / pr;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 1) continue;
+        const fall = Math.sqrt(1 - d2);              // soft edge
+        const i = yy * gw + xx;
+        const nv = Math.min(1, g[i] + amt * fall);
+        if (nv > g[i]) { g[i] = nv; this._wetDirty = true; }
+      }
+    }
+  }
+
+  // Wetness (0..1) at a world point, bilinear-ish (nearest cell).
+  wetAt(x, y) {
+    if (!this._wetGrid) return 0;
+    const res = this._wetRes, gw = this._wetW, gh = this._wetH;
+    let ix = Math.round(x * res), iy = Math.round(y * res);
+    if (ix < 0 || iy < 0 || ix >= gw || iy >= gh) return 0;
+    return this._wetGrid[iy * gw + ix];
+  }
+
+  // Fade the wetness over time and refresh the visual buffer.
+  updateWet(dt) {
+    if (!this._wetGrid) return;
+    const g = this._wetGrid;
+    const decay = Math.exp(-0.08 * dt);              // ~12s to mostly dry
+    let energy = 0;
+    for (let i = 0; i < g.length; i++) {
+      const v = g[i] * decay;
+      g[i] = v < 0.01 ? 0 : v;
+      energy += g[i];
+    }
+    if (energy < 0.5) {                               // fully dry
+      if (this._wetDirty) { this._wetCvCtx.clearRect(0, 0, this._wetW, this._wetH); this._wetDirty = false; }
+      this._wetEnergy = 0;
+      return;
+    }
+    this._wetEnergy = energy;
+    this._wetDirty = true;   // keep fading while any wetness remains
+    // Rebuild the small RGBA buffer from the grid (blue puddle, alpha = wet).
+    const d = this._wetImg.data;
+    for (let i = 0, n = g.length; i < n; i++) {
+      const v = g[i];
+      const o = i * 4;
+      d[o] = 90; d[o + 1] = 165; d[o + 2] = 235;       // water blue
+      d[o + 3] = Math.min(200, v * 200 | 0);
+    }
+    this._wetCvCtx.putImageData(this._wetImg, 0, 0);
+    this._wetDirty = false;
   }
 
   _resize() {
@@ -193,6 +281,13 @@ export class World {
     const tl = this.toScreen(0, 0);
     c.imageSmoothingEnabled = true;
     if (this._floorCv) c.drawImage(this._floorCv, tl.x, tl.y, this.W * this.scale, this.H * this.scale);
+    // wet trail (mopping bot), on top of the floor, under walls/obstacles
+    if (this._wetEnergy > 0) {
+      c.imageSmoothingEnabled = true;
+      c.globalAlpha = 0.9;
+      c.drawImage(this._wetCv, tl.x, tl.y, this.W * this.scale, this.H * this.scale);
+      c.globalAlpha = 1;
+    }
     // walls (pixel-stepped border)
     this._drawWalls(c, tl);
     // obstacles
