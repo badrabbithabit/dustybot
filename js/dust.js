@@ -175,8 +175,10 @@ export class DustSystem {
       // friction
       it.vx *= (1 - Math.min(1, dt * 3));
       it.vy *= (1 - Math.min(1, dt * 3));
-      // pickup — soaked heavy motes pay 1.5x
-      if (dist < pickupR) {
+      // pickup — soaked heavy motes pay 1.5x. Gated on canVacuum: with a full
+      // bin the bot must drive to the dock (suction off is not enough — motes
+      // pushed to the body by the brush would still be collected).
+      if (canVacuum && dist < pickupR) {
         let gained = soaked && it.mass >= heavyMass
           ? Math.round(it.val * BALANCE.mop.valueMult) : it.val;
         // puff: vacuuming it splits it into 3 smaller motes (the cleaning makes work)
