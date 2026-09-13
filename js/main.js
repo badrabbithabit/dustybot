@@ -61,7 +61,9 @@ const canvas = document.getElementById('game');
 const world = new World(canvas);
 const save = loadSave();
 
-const offlineGain = save.meta.meta_ap ? computeOffline(save) : 0; // Auto-Pilot gates the trickle
+const rawOffline = save.meta.meta_ap ? computeOffline(save) : 0; // Auto-Pilot gates the trickle
+// Shards are granted offline only as whole numbers — drop the fraction.
+const offlineGain = Math.floor(rawOffline);
 if (offlineGain > 0) {
   save.shards += offlineGain;
   save._offlineGain = offlineGain;
