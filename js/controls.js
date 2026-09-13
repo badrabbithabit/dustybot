@@ -62,7 +62,7 @@ export class Controls {
         const raw = Math.atan2(dy, dx);
         const a = Math.round(raw / (Math.PI / 4)) * (Math.PI / 4);
         this.joy.x = Math.cos(a);
-        this.joy.y = Math.sin(a);   // screen dir, +y = finger up
+        this.joy.y = Math.sin(a);   // screen dir, +y = down (same as world)
         this.joy.active = true;
         this.onJoyChange && this.onJoyChange(this.joy.x, this.joy.y);
       }

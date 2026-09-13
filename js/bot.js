@@ -167,7 +167,7 @@ export class Bot {
     // steer: bounce heading wins while touching the wall; otherwise follow input.
     let steerTarget = null;
     if (this._bounceTarget != null) steerTarget = this._bounceTarget;
-    else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, iy);
+    else if (ix !== 0 || iy !== 0) steerTarget = Math.atan2(ix, -iy);   // (x,y) world dir (y down) -> heading (0 = up)
     if (steerTarget != null) {
       let d = steerTarget - this.heading;
       d = Math.atan2(Math.sin(d), Math.cos(d));

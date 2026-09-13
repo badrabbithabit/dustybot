@@ -128,7 +128,7 @@ export class Game {
     const j = this.controls.joy;
     const kv = this.controls.keyVector();
     let ix = 0, iy = 0;
-    if (j.active) { ix = j.x; iy = -j.y; }
+    if (j.active) { ix = j.x; iy = j.y; }   // joy.y is already screen/world dir (+y = down)
     else if (kv.active) { ix = kv.x; iy = kv.z; }
     const input = { x: ix, y: iy, boost: this.controls.boost || (kv.active && this.controls.keys[' ']), tap: this._tapInput };
     if (this._tapInput) {
