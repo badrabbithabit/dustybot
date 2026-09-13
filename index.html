@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet" href="./css/style.css?v=1.1.0">
 <title>Dusty Bot — 2D Vacuum Roguelike</title>
 </head>
 <body>
@@ -113,6 +113,12 @@
 </div>
 
 <div id="toast" class="hidden"></div>
+
+<!-- Update-available banner (filled by the update check in main.js) -->
+<div id="update-banner" class="hidden">
+  <span id="update-banner-text">New version available.</span>
+  <button id="btn-update-reload">RELOAD</button>
+</div>
 </body>
-<script type="module" src="./js/main.js"></script>
+<script type="module" src="./js/main.js?v=1.1.0"></script>
 </html>

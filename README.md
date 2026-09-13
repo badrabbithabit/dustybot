@@ -60,6 +60,32 @@ serves the repo root (see `.github/workflows/pages.yml`).
   ☁️ **puff** (lv 37+, splits into 3 motes when vacuumed). Shares ramp with
   the gear and cap at 10/6/6% of non-gold motes.
 
+## Releasing an update
+
+GitHub Pages caches `js/` and `css/` for 7 days, so a plain deploy used to
+reach users only after a force refresh. Two layers fix that (no build step):
+
+1. **Cache-busting URLs** — `index.html` loads assets as `…?v=X.Y.Z`.
+   Pages serves `index.html` with `no-cache`, so every page load sees the
+   new URLs and fetches fresh JS.
+2. **Live update check** — on load, `main.js` fetches `version.json`
+   (`cache: no-store`, always the server truth) and, if the deployed version
+   is newer than the running bundle, shows a "New version available — RELOAD"
+   banner. The reload picks up the new `?v=` tags, so it actually delivers
+   the new build.
+
+The version lives in three synced files: `js/version.js` (bundled truth),
+`version.json` (server truth), and the `?v=` tags in `index.html`. Bump all
+three at once:
+
+```sh
+npm run bump            # patch bump (1.1.0 -> 1.1.1)
+npm run bump 2.0.0      # or set explicitly
+```
+
+then commit and push — Pages deploys on `main`. `npm test` fails if the
+three locations ever drift apart.
+
 ## Save data
 
 `localStorage` key `dustybot_save_v2`:
@@ -86,6 +112,7 @@ js/steer.js           shared steering AI (also drives the hangar sim)
 js/hangar.js          hangar idle sim (mop bot in a mini room, own canvas)
 js/controls.js        joystick, tap-to-move, keyboard
 js/upgrades.js        BOTS, upgrades, themes, levelDef, BALANCE (source of truth)
+js/version.js         VERSION constant (bump via `npm run bump`)
 js/ui.js              screens, HUD, pick panel, toasts, bot portraits
 js/audio.js           WebAudio synth SFX
 js/palette.js         shared palette

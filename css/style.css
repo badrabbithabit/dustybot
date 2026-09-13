@@ -157,6 +157,23 @@ h2 { font-size: 20px; margin: 0 0 -4px; letter-spacing: 2px; color: var(--fg);
   padding: 10px 14px; font-size: 9px; line-height: 1.8; max-width: 300px;
 }
 
+/* Update-available banner (main.js checks version.json on load) */
+#update-banner {
+  position: fixed; top: calc(env(safe-area-inset-top) + 10px); left: 50%;
+  transform: translateX(-50%); z-index: 9998;
+  display: flex; gap: 12px; align-items: center;
+  background: #0b1020ee; border: 2px solid var(--gold, #ffd76a); border-radius: 8px;
+  padding: 10px 14px; color: #fff; font-family: var(--font-pix); font-size: 9px;
+  letter-spacing: 1px; box-shadow: 0 4px 16px #000c; max-width: 92vw;
+}
+#btn-update-reload {
+  pointer-events: auto; padding: 8px 12px; border: 2px solid var(--accent-out);
+  border-radius: 4px; background: linear-gradient(180deg, var(--accent-hi) 0 25%, var(--accent) 25%);
+  color: #fff; font-family: var(--font-pix); font-size: 10px; letter-spacing: 1px;
+  cursor: pointer; box-shadow: 0 3px 0 0 var(--accent-out); flex: none;
+}
+#btn-update-reload:active { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--accent-out); }
+
 /* ---------- Hangar list ---------- */
 #meta-list {
   width: min(420px, 92vw); max-height: 46vh; overflow-y: auto;

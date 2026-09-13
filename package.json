@@ -5,6 +5,7 @@
   "description": "2D roguelike robot vacuum — static site, no build step. Tests only.",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "bump": "node tools/bump-version.mjs"
   }
 }

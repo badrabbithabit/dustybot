@@ -10,6 +10,14 @@ export function showAll(hideList, showId) {
   if (showId) show(showId);
 }
 
+// Persistent, dismissible banner for "a new build is deployed" (see checkForUpdate in main.js).
+export function showUpdateBanner(newVersion) {
+  const el = $('update-banner');
+  if (!el) return;
+  $('update-banner-text').textContent = `New version available (${newVersion}).`;
+  show('update-banner');
+}
+
 let toastTimer = null;
 export function toast(msg, kind = '') {
   const el = $('toast');

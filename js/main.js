@@ -5,8 +5,26 @@ import { BALANCE, offlineGain as computeOffline } from './upgrades.js';
 import * as UI from './ui.js';
 import { renderHelp } from './help.js';
 import * as Audio from './audio.js';
+import { VERSION } from './version.js';
 
 const SAVE_KEY = 'dustybot_save_v2';
+
+// ---- Update check ----
+// GH Pages caches js/css for 7 days. index.html is always fresh (no-cache) and
+// carries ?v= cache-busters, so a normal load picks up new builds. This covers
+// the rest: if this *running* bundle is older than the deployed version.json
+// (fetched no-store, so always the server truth), offer a reload.
+async function checkForUpdate() {
+  try {
+    const res = await fetch('./version.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.version && data.version !== VERSION) {
+      UI.showUpdateBanner(data.version);
+    }
+  } catch { /* offline or file:// — stay silent */ }
+}
+checkForUpdate();
 
 // Visible on-page error trap (mobile-friendly, no DevTools needed).
 function __showErr(label, e) {
@@ -89,6 +107,10 @@ $('btn-instructions-start').onclick = () => {
   UI.hide('screen-instructions');
   game.toMenu(); // the menu screen is hidden in the HTML until this
 };
+
+// Reloading re-fetches index.html (no-cache on Pages), whose ?v= tags now
+// point at the new build, so a plain reload actually delivers fresh JS.
+$('btn-update-reload').onclick = () => location.replace('./?r=' + Date.now());
 
 $('btn-pause').onclick = () => { Audio.sfx.click(); game.togglePause(); };
 $('btn-resume').onclick = () => { Audio.sfx.click(); game.resumeRun(); };
