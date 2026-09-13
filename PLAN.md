@@ -24,17 +24,18 @@ plus a small offline trickle (gated behind a meta unlock).
 - A **level** is one named room with a **fixed dirt budget** scattered at
   start. Motes do **not** regenerate. Clear the level by collecting every mote.
 - On clear: +2 ✦ level bonus, then a 1-of-3 upgrade pick, then the next level.
-  When the upgrade pool is empty (all maxed), a bonus of `5 + level` ✦ is
-  banked and the run just keeps going.
+  The upgrade pool never empties — every run upgrade is always a valid pick.
+  Picks past the base tier get diminishing returns (strength tapers as
+  `max/(lvl+1)`) with hard clamps keeping derived stats bounded.
 - **The bin & the dock.** Motes you collect go into the bin. When
   `bin >= binMax` the bot **clogs**: suction is fully off and speed is
   ÷1.25 (`BALANCE.bin.clogWeightMult`). The side brushes, magnet and
   touch-pickup still work, so a clogged bot can still finish a level — slowly.
   Drive over the **dock** (glowing ring, top-center) to dump the bin.
-- **Difficulty ramp:** dirt count per level
-  `min(160, 26 + (level-1)*6 + rotations*12)` (`BALANCE.dirt`), and themes
-  cycle residential → office → store → space, 3 named rooms each, ramping
-  every full rotation.
+- **Difficulty ramp:** dirt count per level — knee+taper+cap: `raw = 44 +
+  5*(level-1) + 10*rot`; if `raw > 150`: `150 + (raw-150)*0.35`, capped at
+  300; themes cycle residential → office → store → space, 3 named rooms each,
+  ramping every full rotation.
 
 ### Dust economy
 - Mote types (spawn roll, `dust.js`): **dust** = 1 (common), **big** = 3,
@@ -85,9 +86,10 @@ often — dock-hugging play).
 
 Weighted pool (`rollPicks`): each upgrade appears `weight` times in the pool;
 a rolled pick removes **all** copies of its id, so the loop always terminates
-and never offers an upgrade twice in one roll. Upgrades at max level are
-excluded. The pool can run dry (10 upgrades, 37 total levels) — then the run
-gets bonus shards instead of a pick (see §1).
+and never offers an upgrade twice in one roll. The pool is **never empty** —
+all 11 upgrades stay available forever. Picks beyond the original `max` tier
+receive **diminishing returns** (strength = `max/(lvl+1)`) with hard clamps
+(see §9) keeping derived stats in bounds.
 
 | Upgrade | Effect per level | Max | Weight |
 |---|---|---|---|
@@ -186,7 +188,7 @@ collect.
   sliding. No physics lib, no engine, **no build step, no npm** — pure static
   ES modules, GitHub Pages serves the repo root as-is.
 - **Particles:** motes are plain JS objects in a free-list pool (one level's
-  dirt at a time, ≤160) — far below any particle cap.
+  dirt at a time, ≤300) — far below any particle cap.
 - **Audio:** tiny WebAudio synth blips (no assets): click, suck, gold,
   clear, buy, upgrade, boost, dump. Mute button top-right.
 - **Save:** `localStorage` key `dustybot_save_v2`:
@@ -241,14 +243,15 @@ collect.
 - **AFK cap:** 0.8 ✦/h (×polish), 8h cap → a full day ≈ 6.4 ✦. Deliberately
   ~10× slower than active play.
 - **Guardrails:** suction meta capped ×3; boost cooldown floor 1.0s; dirt
-  count capped 160; bin is the only "soft fail" (clog) and it never blocks
-  level completion.
+  count capped 300 (below MAX_DUST=400); in-run pick clamps keep suckR < arena;
+  bin is the only "soft fail" (clog) and it never blocks level completion.
 
 ## 10. QA checklist (manual playtest)
 
 See `REVIEW.md` P4 for the full ordered checklist. Highlights:
 - [ ] All 3 bots: distinct feel, clog at their own binMax, dock dumps.
-- [ ] Long run (35+ levels): upgrade pool drains → bonus shards, no freeze.
+- [ ] Long run (200+ levels): upgrade picks never drain, diminishing returns
+  keep stats bounded, no freeze.
 - [ ] Refresh mid-run: shards/best stats survive (pagehide save).
 - [ ] Offline toast fires once after 60s+ away with Auto-Pilot.
 - [ ] Joystick + tap + keyboard + boost all work; safe-area layout on phone.

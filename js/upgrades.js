@@ -19,9 +19,13 @@ export const BALANCE = {
     base: 44,                       // dirt count at level 1 (per IDLE_PLAN: denser start)
     perLevel: 5,                    // + dirt per level (scales with level number)
     perRotation: 10,                // + dirt per full theme rotation (extra ramp)
-    max: 150,                       // hard cap — levels go endless past this
+    // Dirt count: linear ramp up to `knee`, then a gentler taper so endless
+    // floors keep getting busier (just slower) without a hard wall.
+    knee: 150,                      // dirt count where the ramp eases off
+    taper: 0.35,                    // growth multiplier past the knee
+    dirtCap: 300,                   // hard ceiling (below MAX_DUST=400)
     heavyStep: 0.02,                // + heavy-mote share per rotation (difficulty gears)
-    heavyCap: 0.42,                 // max share of big+debris motes at high levels
+    heavyCap: 0.55,                 // max share of big+debris motes at high levels
     // New dirt types, HARD-INTRODUCED per gear (index = rotation, capped at 3).
     // Each is a new *behavior*, not just more weight (see dust.js).
     staticShares: [0, 0.05, 0.08, 0.10],   // repels suction; brush/mop are the counters
@@ -55,6 +59,17 @@ export const BALANCE = {
     massDiv: 2,                     // soaked heavy motes: effective mass / 2
     valueMult: 1.5,                 // soaked motes pay 1.5x dust value
     stampRate: 0.55,                // wetness added per world unit of mop travel
+  },
+  // Hard physical clamps for in-run upgrades (see clampRunStats). Picks stay
+  // available forever (no hard caps), but these keep the *derived* feel in
+  // bounds so a 200-level run can't make the vacuum bigger than the room.
+  runClamp: {
+    suction: 3.0,         // max run suction (keeps suckR sane)
+    suctionRange: 7.0,    // max suction range (suckR ~21; arena is 44)
+    pickupRadius: 4.5,    // max pickup radius
+    magnetRange: 10.0,    // max magnet pull distance
+    speed: 12.0,          // max move speed
+    goldChance: 0.5,      // max golden-dust probability
   },
   gearEvery: 12,                    // one difficulty "gear" = one theme rotation (12 levels)
   shardPerLevelPerLevel: 0.05,      // level-clear shards: base + this * (level-1)
@@ -149,42 +164,42 @@ export const BOT_ORDER = ['roomba', 'mi', 'shark', 'mop', 'hog', 'zippy'];
 export const RUN_UPGRADES = [
   { id: 'suction', name: 'Suction Core', icon: '🌀', max: 5, weight: 3,
     desc: lvl => `+20% suction & range, +5 bin (L${lvl})`,
-    apply: (s, n) => { s.suction *= 1.2; s.suctionRange += 0.5; s.binMax += 5; } },
+    apply: (s, n, st) => { s.suction *= Math.pow(1.2, st); s.suctionRange += 0.5 * st; s.binMax += 5 * st; } },
   { id: 'brush', name: 'Turbo Brush', icon: '🪥', max: 5, weight: 3,
     desc: lvl => lvl <= 1 ? `Adds a side brush (L1)` : `Brush grows, +20% pickup (L${lvl})`,
     // No bot ships with a brush — this IS the side-brush upgrade path:
     // L1 adds it, L2+ grows it (+20% pickup). Additive = pick count, capped 5.
-    apply: (s) => {
+    apply: (s, n, st) => {
       s.brushLevel = Math.min(5, (s.brushLevel || 0) + 1);
-      if (s.brushLevel >= 2) s.pickupRadius *= 1.2;
+      if (s.brushLevel >= 2) s.pickupRadius *= Math.pow(1.2, st);
     } },
   { id: 'speed', name: 'Speed Coil', icon: '⚡', max: 5, weight: 4,
     desc: lvl => `+10% speed & turning (L${lvl})`,
-    apply: (s, n) => { s.speed *= 1.10; s.turnRate *= 1.10; } },
+    apply: (s, n, st) => { s.speed *= Math.pow(1.10, st); s.turnRate *= Math.pow(1.10, st); } },
   { id: 'traction', name: 'Heavy Motor', icon: '🐗', max: 4, weight: 4,
     desc: lvl => `+50% motor (L${lvl}) — shrugs off heavy-dust drag`,
-    apply: (s, n) => { s.motor *= 1.5; } },
+    apply: (s, n, st) => { s.motor *= Math.pow(1.5, st); } },
   { id: 'bin', name: 'Extra Hopper', icon: '📦', max: 5, weight: 3,
     desc: lvl => `+25 bin capacity (L${lvl})`,
-    apply: (s, n) => { s.binMax += 25; } },
+    apply: (s, n, st) => { s.binMax += 25 * st; } },
   { id: 'magnet', name: 'Magnet Motor', icon: '🧲', max: 3, weight: 2,
     desc: lvl => `+15% dust pull distance (L${lvl})`,
-    apply: (s, n) => { s.magnetRange += 1.4; } },
+    apply: (s, n, st) => { s.magnetRange += 1.4 * st; } },
   { id: 'overdrive', name: 'Overdrive', icon: '🔥', max: 3, weight: 2,
     desc: lvl => `-20% boost cooldown (L${lvl})`,
-    apply: (s, n) => { s.boostCdMult *= 0.8; } },
+    apply: (s, n, st) => { s.boostCdMult *= Math.pow(0.8, st); } },
   { id: 'merchant', name: 'Scrap Merchant', icon: '🪙', max: 3, weight: 2,
     desc: lvl => `+15% dust→shard conversion (L${lvl})`,
-    apply: (s, n) => { s.shardMult *= 1.15; } },
+    apply: (s, n, st) => { s.shardMult *= Math.pow(1.15, st); } },
   { id: 'clean', name: 'Wide Suction', icon: '🌫️', max: 3, weight: 2,
     desc: lvl => `+15% pickup radius (L${lvl})`,
-    apply: (s, n) => { s.pickupRadius *= 1.15; } },
+    apply: (s, n, st) => { s.pickupRadius *= Math.pow(1.15, st); } },
   { id: 'cap', name: 'Deep Hopper', icon: '📦', max: 3, weight: 2,
     desc: lvl => `+20 bin capacity (L${lvl})`,
-    apply: (s, n) => { s.binMax += 20; } },
+    apply: (s, n, st) => { s.binMax += 20 * st; } },
   { id: 'junk', name: 'Gold Bristles', icon: '🍀', max: 2, weight: 1,
     desc: lvl => `+3% golden dust chance (L${lvl})`,
-    apply: (s, n) => { s.goldChance += 0.03; } },
+    apply: (s, n, st) => { s.goldChance += 0.03 * st; } },
 ];
 
 // ---------------- Meta upgrades (shards, persist across runs) ----------------
@@ -241,15 +256,33 @@ export function makeRunStats(meta, botId) {
   return s;
 }
 
+// Endless upgrade picks: first `max` picks are full strength (st=1),
+// byte-identical to the old capped game. Past the base tier strength tapers
+// 1/lvl so endless runs keep offering real value instead of running dry.
+export function tierStrength(lvl, max) {
+  return lvl < max ? 1 : max / (lvl + 1);
+}
+
+// Hard clamps so endless picking can't break the arena or the gold rate.
+function clampRunStats(s) {
+  const C = BALANCE.runClamp;
+  s.suction = Math.min(C.suction, s.suction);
+  s.suctionRange = Math.min(C.suctionRange, s.suctionRange);
+  s.pickupRadius = Math.min(C.pickupRadius, s.pickupRadius);
+  s.magnetRange = Math.min(C.magnetRange, s.magnetRange);
+  s.speed = Math.min(C.speed, s.speed);
+  s.goldChance = Math.min(C.goldChance, s.goldChance);
+}
+
 export function runLevels(s) {
   return s._runLevels || (s._runLevels = {});
 }
 
 export function rollPicks(s, count = 3) {
-  const lvls = runLevels(s);
   const pool = [];
+  // No hard cap: every upgrade stays a valid pick, so endless runs keep
+  // offering 3 real choices forever. Diminishing returns live in applyPick.
   for (const u of RUN_UPGRADES) {
-    if ((lvls[u.id] || 0) >= u.max) continue;
     for (let i = 0; i < u.weight; i++) pool.push(u);
   }
   const picks = [];
@@ -270,9 +303,10 @@ export function applyPick(s, id) {
   if (!u) return false;
   const lvls = runLevels(s);
   const cur = lvls[u.id] || 0;
-  if (cur >= u.max) return false;
+  const st = tierStrength(cur, u.max); // full in base tier, diminishing past it
   lvls[u.id] = cur + 1;
-  u.apply(s, lvls[u.id]);
+  u.apply(s, lvls[u.id], st);
+  clampRunStats(s);
   return true;
 }
 
@@ -370,8 +404,12 @@ export function levelDef(level, runSeed = 0) {
   const theme = THEMES[themeKey];
   const room = generateLevel(themeKey, level, runSeed);
   const obstacles = room.obstacles.map(o => ({ ...o }));
-  const dirtCount = Math.min(BALANCE.dirt.max,
-    BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation);
+  // Dirt count: linear ramp to knee, then gentler taper, up to dirtCap.
+  const rawDirt = BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation;
+  const dirtCount = Math.round(Math.min(BALANCE.dirt.dirtCap,
+    rawDirt <= BALANCE.dirt.knee
+      ? rawDirt
+      : BALANCE.dirt.knee + (rawDirt - BALANCE.dirt.knee) * BALANCE.dirt.taper));
   // Heavy-mote share (big + debris) climbs one "gear" per rotation: late
   // levels demand mopper / heavy-motor builds instead of just grinding.
   const heavyShare = Math.min(BALANCE.dirt.heavyCap, 0.26 + rot * BALANCE.dirt.heavyStep);

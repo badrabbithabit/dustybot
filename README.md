@@ -36,8 +36,12 @@ serves the repo root (see `.github/workflows/pages.yml`).
 
 ## Idle & endless
 
-- **Endless levels** — no hard cap; dirt per level ramps gently (44 → 150)
-  with difficulty stepping up every 12 levels ("gear up" banner).
+- **Endless levels** — no hard cap; dirt ramps 44 → 150 (lv 22) then climbs
+  gently to 300 (~lv 92) before holding at a strong plateau. Difficulty steps
+  every 12 levels ("gear up"). Heavy-mote share climbs to 55%.
+- **Endless upgrades** — picks never exhaust. After the original base tier,
+  each pick gives diminishing returns (strength tapers 1/lvl) with hard
+  clamps keeping derived stats (suckR, pickup radius, goldChance) bounded.
 - **Offline shards** — requires the **Auto-Pilot Sensor** meta upgrade.
   Rate ≈ `1.2/hr × (1 + 0.05·polish) × (1 + 0.12·(bestLevel−1))`, accruing
   proportionally from the second you're away, capped at 8h.

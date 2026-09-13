@@ -12,46 +12,47 @@ import { Bot } from '../js/bot.js';
 const fresh = bot => makeRunStats({}, bot || 'roomba');
 const lvl = (s, id) => (s._runLevels || (s._runLevels = {}))[id] || 0;
 
-test('rollPicks: 3 unique valid picks, none at max', () => {
+test('rollPicks: always returns 3 unique valid picks (no hard cap)', () => {
   const s = fresh();
+  // Pick 200 times so every upgrade far exceeds its old max tier
   for (let i = 0; i < 200; i++) {
     const picks = rollPicks(s);
-    assert.equal(picks.length, 3, 'fresh pool always yields 3');
+    assert.equal(picks.length, 3, 'always yields 3 picks');
     const ids = picks.map(p => p.id);
-    assert.equal(new Set(ids).size, 3, 'no duplicate ids in one roll');
+    assert.equal(new Set(ids).size, 3, 'all distinct');
     for (const p of picks) {
       assert.ok(RUN_UPGRADES.some(u => u.id === p.id), 'pick is a real upgrade');
-      assert.ok(lvl(s, p.id) < p.max, 'never offers a maxed upgrade');
     }
   }
 });
 
-test('rollPicks: terminates when pool nearly drained (P0-5 regression)', () => {
-  // Freeze bug: old `continue`-on-seen looped forever when <3 distinct
-  // upgrades remained. Level everything to max-1, then max out all but 2.
+test('rollPicks: never stalls; stats stay bounded (no blowup)', () => {
   const s = fresh();
-  for (const u of RUN_UPGRADES) {
-    for (let i = 0; i < u.max - 1; i++) applyPick(s, u.id);
+  // Force ~60 picks per upgrade — worst case for stat blowup
+  for (let i = 0; i < 200; i++) {
+    const picks = rollPicks(s);
+    for (const p of picks) applyPick(s, p.id);
   }
-  const picksA = rollPicks(s);              // everything left -> 3
-  assert.equal(picksA.length, 3);
-  for (let i = 0; i < RUN_UPGRADES.length - 2; i++) applyPick(s, RUN_UPGRADES[i].id); // 2 left
-  const picksB = rollPicks(s);              // must RETURN, with <=2
-  assert.ok(picksB.length <= 2, 'returns whatever remains, no hang');
-  assert.equal(new Set(picksB.map(p => p.id)).size, picksB.length, 'still unique');
-  for (const u of RUN_UPGRADES) applyPick(s, u.id);
-  assert.deepEqual(rollPicks(s), [], 'empty pool -> [] (game shows shard bonus)');
+  // Derived suction range must fit the arena (44-wide)
+  const suckR = Math.max(s.pickupRadius + 0.5, s.suctionRange * s.suction);
+  assert.ok(suckR < BALANCE.arena.w, `suckR ${suckR.toFixed(1)} fits arena ${BALANCE.arena.w}`);
+  assert.ok(s.goldChance <= 1.0, `goldChance ${s.goldChance} <= 1.0`);
 });
 
-test('applyPick: respects max level and mutates stats', () => {
+test('applyPick: full strength in base tier, diminishing past it', () => {
   const s = fresh();
+  // First 5 suction picks: full strength (byte-identical to old capped game)
   for (let i = 0; i < 5; i++) assert.ok(applyPick(s, 'suction'));
-  assert.equal(applyPick(s, 'suction'), false, '6th Suction Core refused');
   let expSuction = 1.0;
-  for (let i = 0; i < 5; i++) expSuction *= 1.2;   // same ops as impl, exact match
+  for (let i = 0; i < 5; i++) expSuction *= 1.2;
   assert.equal(s.suction, expSuction);
   assert.equal(s.suctionRange, 2.6 + 0.5 * 5);
   assert.equal(s.binMax, 100 + 5 * 5);
+  // 6th pick still works, but at a diminished rate
+  const s0 = s.suction, r0 = s.suctionRange, b0 = s.binMax;
+  assert.ok(applyPick(s, 'suction'), '6th pick still applies (no hard cap)');
+  assert.ok(s.suction > s0, 'suction still increases');
+  assert.ok(s.suction < s0 * 1.2, 'but at a diminished rate');
   assert.equal(applyPick(s, 'nope'), false, 'unknown id is a no-op');
 });
 
@@ -130,7 +131,7 @@ test('levelDef: themes rotate 3-per-theme, dirt ramps with rotation', () => {
     assert.equal(d.roomName.length > 0, true);
     assert.ok(Array.isArray(d.obstacles));
     assert.ok(d.dirtCount >= BALANCE.dirt.base, 'dirt >= base');
-    assert.ok(d.dirtCount <= BALANCE.dirt.max, 'dirt <= cap');
+    assert.ok(d.dirtCount <= BALANCE.dirt.dirtCap, 'dirt <= cap');
   }
   const l1 = levelDef(1), l13 = levelDef(13);
   assert.equal(l1.themeKey, 'residential');
@@ -139,7 +140,7 @@ test('levelDef: themes rotate 3-per-theme, dirt ramps with rotation', () => {
   assert.equal(l13.dirtCount, l1.dirtCount + 12 * BALANCE.dirt.perLevel + BALANCE.dirt.perRotation,
     'rotation adds level ramp + per-rotation ramp');
   const big = levelDef(1000);
-  assert.equal(big.dirtCount, BALANCE.dirt.max, 'dirt capped at high levels');
+  assert.equal(big.dirtCount, BALANCE.dirt.dirtCap, 'dirt hits cap at very high levels');
 });
 
 test('levelDef: layout hard rules hold for every room (dock strip + spawn pad)', () => {

@@ -124,7 +124,7 @@ export function buildPicks(picks, stats, onPick) {
     card.innerHTML = `
       <div class="pick-icon">${u.icon}</div>
       <div>
-        <div class="pick-name">${u.name} <span class="pick-lvl">Lv ${lvl}/${u.max}</span></div>
+        <div class="pick-name">${u.name} <span class="pick-lvl">Lv ${lvl}</span></div>
         <div class="pick-desc">${u.desc(lvl)}</div>
       </div>`;
     card.onclick = () => onPick(u.id);

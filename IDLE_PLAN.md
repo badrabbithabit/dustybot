@@ -156,8 +156,7 @@ speedMult = motor / (motor + dragMass * 0.12)             // 0.12 = BALANCE.drag
 - **Speed unlocks early:** `speed` and `traction` get elevated pick weights at
   low levels (weight ×1.5 while run level < 5, alongside `suction`'s existing
   early boost) so the player gets an answer within 1–2 levels.
-- **Soft ramp:** `dirt = min(150, 44 + 5*(level-1) + 10*rotation)` — hits the
-  150 cap around lv 22 (rot 0) instead of 160@~22, stays flat after.
+- **Soft ramp:** `raw = 44 + 5*(level-1) + 10*rotation`; if `raw > 150`: `dirt = 150 + (raw-150)*0.35`, capped at 300 — hits the knee (150) around lv 22, then a gentler climb to the 300 ceiling at ~lv 92, then holds. Endless levels never hit a hard wall; difficulty keeps rising via more motes.
 - **Repeating difficulty = "gears":** difficulty steps happen **at rotation
   boundaries** (every 12 levels, i.e. each new theme). Per rotation: heavy
   mote share +2 pts (big+debris combined, capped at 42%), obstacles already
@@ -166,6 +165,12 @@ speedMult = motor / (motor + dragMass * 0.12)             // 0.12 = BALANCE.drag
   repeat is legible.
 - **Endless:** levels stay unbounded (already are). `levelBonus =
   min(8, 0.5 + 0.08*level)` (was 0.5+0.1 capped 5) — slow, unbounded.
+- **Endless upgrades:** in-run picks are **never exhausted**. `rollPicks` always
+  offers 3 choices, even after a bot far exceeds its old base tier. Picks beyond
+  the original `max` receive **diminishing returns** (strength tapers as
+  `max/(lvl+1)`) so growth stays meaningful but never blows up. Hard physical
+  clamps cap derived stats (suckR < arena 44, goldChance < 1.0) so a 200-level
+  run is safe.
 - Note for later (out of scope now): `BALANCE.dust.timeBonus` currently pays
   *slower* clears more (noted in BALANCE_REVIEW.md) — it inverts the speed
   incentive the user wants; flag to user, don't change unasked.
@@ -249,8 +254,10 @@ all of them). Shares are of the **non-gold** mote pool, ramp per gear
    - `BALANCE.drag = { heavyMass: 0.3, weight: 0.12 }`.
    - `BALANCE.mop = { stampR: 1.5, minSpeed: 1, wetCell: 1.33, dryRate: 0.9,
      soakThresh: 0.25, massDiv: 2, valMult: 1.5 }`.
-   - `levelDef`: new dirt curve `min(150, 44+5(l-1)+10rot)`; heavy-share base
-     26% (+2/rot, cap 42%); `def.gearUp = (level-1) % 12 === 0 && level > 1`;
+   - `levelDef`: dirt curve — knee+taper+cap: `raw = 44+5(l-1)+10rot`; if
+     `raw>150`: `150+(raw-150)*0.35`, capped at 300 (below dust MAX_DUST=400);
+     heavy share `26%+2%/rot`, cap 55%; `def.gearUp = (level-1) % 12 === 0 && level > 1`;
+     new dirt shares flat at gear-3 via `*Shares[g]` arrays (g = min(3, rot)).
      `levelBonus = min(8, 0.5+0.08*level)`.
    - `BOTS`: add `mopper`, `hog`, `zippy` (stats above, `unlockLevel` 5/12/20,
      `motor` 1/2/99, shapes 'mop'/'tank'/'shark'); existing bots `motor:1`,
@@ -309,8 +316,9 @@ all of them). Shares are of the **non-gold** mote pool, ramp per gear
     add `mop`, `tank` shapes there.
 11. **Tests/sim**
     - `test/upgrades.test.js`: new upgrades exist/cost/apply; `levelDef` new
-      curve bounds (dirt ≤150, heavy share ≤42%, gearUp at 13/25/37…);
-      BOTS new entries have motor/unlockLevel.
+      curve bounds (dirt ≤300, heavy share ≤55%, gearUp at 13/25/37…);
+      endless upgrades: rollPicks always 3, applyPick diminishing past base tier,
+      no stat blowup after 60 picks/upgrade; BOTS new entries have motor/unlockLevel.
     - `test/idle.test.js` (NEW): offline formula monotonic in bestLevel and
       time; cap at 8h; missing-fields migration (old save shape); motes
       estimate integer.
@@ -335,7 +343,7 @@ all of them). Shares are of the **non-gold** mote pool, ramp per gear
 | magnet pull | `1.5·magnet·0.5 / (1+0.3·mass)` |
 | drag speedMult | `motor / (motor + 0.12·ΣheavyMass in suckR)`, `motor = botDef.motor·(1+0.5·traction)·(1+0.25·drivetrain)` |
 | soaked mote | on wet>0.25: mass/2, value ×1.5 |
-| dirt/level | `min(150, 44 + 5·(l−1) + 10·rot)` |
+| dirt/level | knee+taper+cap: `raw=44+5·(l−1)+10·rot`; if `raw>150`: `150+(raw−150)·0.35`, capped at 300 |
 | heavy share | `26% + 2%/rot`, cap 42% (big:debris 4:1 of that pool… keep existing 18/6 ratio scaled) |
 | level bonus | `min(8, 0.5 + 0.08·level)` |
 
@@ -364,8 +372,12 @@ user replied **"Go"**, all defaults accepted as written below)
 3. **Drag strength** — 2 debris motes ≈ −33% speed at base, fully answerable
    by Heavy Motor (run) + Drivetrain (meta)? Should gold motes also drag
    (they're rare+valuable)? [default: yes, all heavy types]
-4. **Level curve** — lv1 = 44 motes (heavier mix), ramp 5/level to cap 150,
-   difficulty steps only at 12-level "gear" boundaries, levels endless?
+4. **Level curve** — lv1 = 44 motes (heavier mix), knee at 150 (lv ~22) then
+   tapered climb to cap 300 (~lv 92); heavy share ramps to 55%; endless,
+   difficulty steps at 12-level "gear" boundaries.
+5. **Endless upgrades** — in-run picks never exhaust; picks past base tier get
+   diminishing returns (strength `max/(lvl+1)`); hard clamps keep derived stats
+   (suckR, goldChance) bounded. Meta upgrades remain capped (persistent sink).
    [default: yes]
 5. **New bots** — exactly 3 (Mop 🧽 lv5 · Hog 🐗 lv12 · Zippy ⚡ lv20),
    unlocked by *lifetime best level*, mop's hook = wet trail + soaked motes
@@ -397,13 +409,35 @@ user replied **"Go"**, all defaults accepted as written below)
 - [x] `js/hangar.js`: new — HangarIdle live sim class (own canvas, fake world, mop bot)
 - [x] `js/main.js`: offline formula + flavor toast, idle counters
 - [x] `js/ui.js` + `index.html` + `css/style.css`: locked bot cards, drag HUD, hangar canvas, intro gear variant, portraits (mop/tank/hover)
-- [x] tests: 26/26 green (upgrades, levelgen, idle); sim all 6 bots on wet world + drag, 14 levels to L52
+- [x] tests: 29/29 green (upgrades, levelgen, idle); sim all 6 bots on wet world + drag, 14 levels to L52
 - [x] README updated; §11 changelog
 - [x] New dirt types (§4G): `upgrades.js` shares + `levelDef`, `dust.js` behaviors/draw, `ui.js` intro text, palette colors, sim LEVELS +40/52, share tests
 - [ ] Manual QA in browser (offline calc, drag feel, wet trail look, unlocks, endless to lv 60, new dirt at 13/25/37) — needs a human at a screen
 
 ## 11. Changelog
 
+- **2026-07-08** — **Endless upgrade caps removed** — in-run picks never exhaust:
+  - `js/upgrades.js`: added `tierStrength(lvl, max)` helper — picks within the
+    original `max` tier are **full strength** (byte-identical to old game), past
+    that strength tapers as `max/(lvl+1)` so growth stays meaningful but never
+    blows up. Added `clampRunStats()` hard clamps (suction ≤3.0, suctionRange ≤
+    7.0, pickupRadius ≤4.5, magnetRange ≤10.0, speed ≤12.0, goldChance ≤0.5)
+    so a 200-level run can't break the arena.
+  - `rollPicks`: removed the max-filter; always returns 3 picks from the full
+    upgrade pool indefinitely.
+  - `applyPick`: removed the max guard; always applies with diminishing returns.
+    All 11 upgrade `apply` functions now take `(s, n, st)` and scale by `st`.
+  - `js/ui.js`: pick display changed from `Lv N/max` to `Lv N` (max is no longer
+    a hard cap for run upgrades; meta upgrades still show MAX).
+  - `test/upgrades.test.js`: rewritten — "always 3 picks (no cap)",
+    "no blowup after 60 picks/upgrade", "applyPick diminishing past base tier";
+    dirt cap assertions updated to `BALANCE.dirt.dirtCap` (300).
+  - `js/upgrades.js`: `BALANCE.dirt.max` → `knee` (150), added `taper` (0.35),
+    `dirtCap` (300); raised `heavyCap` 0.42→0.55 (more heavy motes in endless).
+  - `levelDef` dirt formula: `raw=44+5(l-1)+10·rot`; if `raw>150`: `150+(raw-150)*0.35`,
+    capped at 300. Reaches 300 at ~lv 92, then holds at a strong plateau.
+  - **Result:** endless mode picks forever, difficulty ramps (dirt 44→300, heavy
+    26%→55%), stats grow with diminishing returns + clamps. 29/29 tests pass.
 - **2026-07-08** — Doc created (research + full design).
 - **2026-07-08** — Implemented (user said "Go", defaults accepted):
   - `js/steer.js` new (shared AI: `R`, `rayClear`, `firstBlocker`, `detourWaypoint`, `steer`); `tools/steer.mjs` re-exports it.
