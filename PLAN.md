@@ -5,13 +5,16 @@ You are a little robot vacuum in a top-down 2D room full of dust. Vacuum
 everything, dump your bin at the dock, pick 1 of 3 upgrades, go deeper.
 There is **no failure mode** — a run ends when you walk away. A persistent
 meta-currency ("Dust Shards" ✦) carries between runs for permanent upgrades,
-plus a small offline trickle (gated behind a meta unlock).
+plus idle/offline trickle channels (gated behind meta unlocks).
 
 > This doc specs the **shipped implementation** (2D canvas). An earlier draft
 > described a 3D/Three.js game with lives, battery and hazards — that design
-> was dropped before launch; everything below matches `js/` as committed.
+> was dropped before launch. The idle/endless extension (6 bots, heavy-dust
+> drag, mopping, new dirt types, auto-bay) is specced in `IDLE_PLAN.md` and
+> is included below. **`js/upgrades.js` (`BALANCE`) is the single source of
+> truth for every number** — if this doc and the code disagree, the code wins.
 
-## 1. Core loop (level-based, no failure)
+### Core loop (level-based, no failure)
 
 ```
 [Menu] -> [Select bot] -> [Level 1 intro] -> PLAY -> level clear
@@ -22,80 +25,93 @@ plus a small offline trickle (gated behind a meta unlock).
 ```
 
 - A **level** is one named room with a **fixed dirt budget** scattered at
-  start. Motes do **not** regenerate. Clear the level by collecting every mote.
-- On clear: +2 ✦ level bonus, then a 1-of-3 upgrade pick, then the next level.
-  The upgrade pool never empties — every run upgrade is always a valid pick.
-  Picks past the base tier get diminishing returns (strength tapers as
-  `max/(lvl+1)`) with hard clamps keeping derived stats bounded.
+  start. Motes do **not** regenerate. Clear the level by collecting every
+  mote **and dumping the bin at the dock** (dirt counts as cleared only once
+  it leaves the bin).
+- On clear: `2 + 0.05·(level−1)` ✦ level bonus, then a 1-of-3 upgrade pick,
+  then the next level. The upgrade pool never empties — every run upgrade is
+  always a valid pick. Picks past the base tier get diminishing returns
+  (strength tapers as `max/(lvl+1)`) with hard clamps keeping derived stats
+  bounded.
 - **The bin & the dock.** Motes you collect go into the bin. When
-  `bin >= binMax` the bot **clogs**: suction is fully off and speed is
-  ÷1.25 (`BALANCE.bin.clogWeightMult`). The side brushes, magnet and
-  touch-pickup still work, so a clogged bot can still finish a level — slowly.
-  Drive over the **dock** (glowing ring, top-center) to dump the bin.
+  `bin >= binMax` the bot **clogs**: suction is fully off, pickup is gated
+  off, and speed is ÷1.25 (`BALANCE.bin.clogWeightMult`). The side brushes
+  and magnet still push motes around, so a clogged bot can still finish a
+  level — slowly. Drive over the **dock** (glowing ring, top-center) to dump.
 - **Difficulty ramp:** dirt count per level — knee+taper+cap: `raw = 44 +
   5*(level-1) + 10*rot`; if `raw > 150`: `150 + (raw-150)*0.35`, capped at
-  300; themes cycle residential → office → store → space, 3 named rooms each,
-  ramping every full rotation.
+  300; themes cycle residential → office → store → space, 3 rooms each;
+  one difficulty "gear" per full rotation (12 levels, `gearUp` banner).
 
 ### Dust economy
-- Mote types (spawn roll, `dust.js`): **dust** = 1 (common), **big** = 3,
-  **debris** = 2, **gold** = 5 (chance `3% + upgrades`, see Gold Bristles /
-  Lucky Bristles).
+- Mote types (spawn roll, `dust.js`): **dust** = 1 (common), **debris** = 2,
+  **puff** = 2, **big** = 3, **static** = 3, **tar** = 4, **gold** = 5
+  (chance `3% + Gold/Lucky Bristles`, clamped ≤ 0.5).
+- Heavy-mote share (big+debris) climbs `26% + 2%/rotation`, cap 55%.
+- New dirt types, hard-introduced per gear (shares of the roll, capped at
+  10/6/6%): ⚡ **static** (lv 13+, repels suction — brush/mop counters),
+  🟫 **tar** (lv 25+, mass 3.0, oozes at 0.15 u/s), ☁️ **puff** (lv 37+,
+  splits into 3 dust motes when vacuumed). Behaviors live in `dust.js`.
 - Every mote collected banks `value * 0.05 * shardMult` ✦ (fractional parts
   accumulate in an accumulator; whole shards go to the save instantly).
 - Passive trickle: `0.05 ✦/s * shardMult` while a level is being played.
-- Level clear: +2 ✦.
+- Level clear: `2 + 0.05·(level−1)` ✦.
 - **Offline** (requires Auto-Pilot Sensor meta): on load,
-  `shards += floor(0.8/h * (1 + 0.05*polisherLvl) * min(elapsed, 8h))`,
-  granted only after ≥60s away, surfaced as a one-time "while you were away"
+  `shards += floor(1.2/h * (1 + 0.05*polishLvl) * (1 + 0.12*(bestLevel−1)) * min(elapsed, 8h))`,
+  granted as a whole number, surfaced as a one-time "while you were away"
   toast. Deliberately slow: AFK is a drip, active play is the real economy.
+- **Hangar Auto-Bay** (requires Auto-Bay meta, max 3 → ×0/×1/×2/×4): while
+  the hangar screen is open, a SUDS mop-bot visibly cleans a mini bay
+  (`js/hangar.js`, driven by the real Bot/DustSystem/steer). Shards accrue
+  at a flat `0.3/hr * (1 + 0.1*(bestLevel−1)) * mult` — the sim is a visual,
+  the flat rate is the economy.
 
-## 2. Bots (character select)
+## Bots (character select — 6, three unlock by lifetime best level)
 
-Three bots modeled on real robot vacuums. Stats are the **run starting
-values**; meta upgrades multiply on top (`makeRunStats`).
+Stats are the **run starting values**; meta upgrades multiply on top
+(`makeRunStats`). No bot starts with a side brush — Turbo Brush IS the
+brush upgrade path. `motor` resists heavy-dust drag (ZIP's 99 = immune).
 
-| | **ROOMBA** 🔴 all-rounder | **MI ROBOT** 🔵 LiDAR scout | **SHARK** 🟣 self-empty powerhead |
-|---|---|---|---|
-| suction | 1.0 | 0.9 | **1.3** |
-| suction range | 3.4 | 3.0 | **4.2** |
-| pickup radius | 1.7 | 1.5 | **1.9** |
-| brush level | **2** | 1 | 1 |
-| speed | 6.0 | **7.2** | 5.1 |
-| turn rate | 5.0 | **6.4** | 4.0 |
-| magnet range | 0 | 0.6 | **1.6** |
-| bin capacity | 100 | **130** | 70 |
-| boost cd mult | 1.0 | 1.0 | **0.85** |
+| | 🔴 **ROOMBA** | 🔵 **MI** | 🟣 **SHARK** | 🧽 **SUDS** (lv5) | 🐗 **BULLDOG** (lv12) | ⚡ **ZIP** (lv20) |
+|---|---|---|---|---|---|---|
+| suction | 1.0 | 1.0 | **1.3** | 0.8 | 1.1 | 1.0 |
+| suction range | 2.6 | 2.4 | **3.4** | 2.4 | 2.8 | 3.0 |
+| pickup radius | 1.7 | 1.5 | **1.9** | 1.6 | 1.8 | 1.6 |
+| speed | 6.0 | **7.2** | 5.1 | 5.6 | 5.6 | **7.4** |
+| turn rate | 5.0 | 6.4 | 4.0 | 5.0 | 4.6 | **6.8** |
+| magnet range | 0 | 0.6 | **1.6** | 0 | 0.8 | 1.2 |
+| bin capacity | 100 | **130** | 90 | 110 | **150** | 95 |
+| boost cd mult | 1.0 | 1.0 | 0.85 | 1.0 | 0.9 | **0.8** |
+| motor | 1.0 | 1.0 | 1.0 | 1.0 | **2.0** | 99 |
+| special | all-rounder | LiDAR scout | self-empty | **mop trail** | heavy hauler | no drag, +10% shards |
 
-Trade-off summary: Roomba = balanced; Mi = fast/turny/big bin but weaker
-suction; Shark = monster suction + magnet but slow and tiny hopper (clogs
-often — dock-hugging play).
+## Controls
 
-## 3. Controls
-
-- **Virtual joystick** (left-half touch zone, drawn knob): analog steer.
-- **Tap-to-move** (right-half tap): sets a target point; the bot drives
-  straight with obstacle sliding. Joystick input cancels the tap target.
-- **Boost button** (hold, right side): ×1.7 speed, then a cooldown of
-  `4.0s * boostCdMult` (floor 1.0s). Boost also spins the brushes faster.
-- **Keyboard** (desktop): WASD/arrows to move, **Space** = boost,
-  mouse click = tap-to-move.
+- **Virtual joystick** (bottom-left 42%×42% zone, drawn knob): steer —
+  input snaps to the **8 compass directions**.
+- **Tap-to-move** (tap anywhere on the floor outside the joystick zone):
+  sets a target point; the bot drives straight with obstacle sliding.
+  Joystick input cancels the tap target.
+- **Boost button** (hold, right side): ×1.7 speed bursts of 1.0s, then a
+  cooldown of `4.0s * boostCdMult` (floor 1.0s) — holding it cycles
+  burst/cooldown (~25% duty at base). Boost also spins the brushes faster.
+- **Keyboard** (desktop): WASD/arrows to move, **Space** = boost, mouse
+  click = tap-to-move, **ESC / P** = pause (pause screen links to help).
 - No free camera: the 44×44 world is letterbox-fit to the viewport.
 
-## 4. In-run upgrades (1 of 3 after each level)
+## In-run upgrades (1 of 3 after each level)
 
-Weighted pool (`rollPicks`): each upgrade appears `weight` times in the pool;
-a rolled pick removes **all** copies of its id, so the loop always terminates
-and never offers an upgrade twice in one roll. The pool is **never empty** —
-all 11 upgrades stay available forever. Picks beyond the original `max` tier
-receive **diminishing returns** (strength = `max/(lvl+1)`) with hard clamps
-(see §9) keeping derived stats in bounds.
+Weighted pool (`rollPicks`): each upgrade appears `weight` times; a rolled
+pick removes all copies of its id. The pool is **never empty** — all 11
+upgrades stay available forever. Picks beyond the base `max` tier get
+**diminishing returns** (strength = `max/(lvl+1)`) with hard clamps (§9).
 
 | Upgrade | Effect per level | Max | Weight |
 |---|---|---|---|
 | 🌀 Suction Core | ×1.2 suction, +0.5 range, +5 bin | 5 | 3 |
-| 🪥 Turbo Brush | L1 adds brush; then ×1.2 pickup radius | 5 | 3 |
+| 🪥 Turbo Brush | L1 adds side brush; then ×1.2 pickup radius | 5 | 3 |
 | ⚡ Speed Coil | ×1.10 speed & turn rate | 5 | 3 |
+| 🐗 Heavy Motor | ×1.5 motor (shrugs off heavy-dust drag) | 4 | 4 |
 | 📦 Extra Hopper | +25 bin | 5 | 3 |
 | 🧲 Magnet Motor | +1.4 magnet pull distance | 3 | 2 |
 | 🔥 Overdrive | ×0.8 boost cooldown | 3 | 2 |
@@ -104,7 +120,7 @@ receive **diminishing returns** (strength = `max/(lvl+1)`) with hard clamps
 | 📦 Deep Hopper | +20 bin | 3 | 2 |
 | 🍀 Gold Bristles | +3% gold mote chance | 2 | 1 |
 
-## 5. Meta upgrades (hangar — persist forever, cost `base * 1.6^level`)
+## Meta upgrades (hangar — persist forever, cost `base * 1.6^level`)
 
 | Upgrade | Base ✦ | Max | Effect per level |
 |---|---|---|---|
@@ -112,100 +128,109 @@ receive **diminishing returns** (strength = `max/(lvl+1)`) with hard clamps
 | ⚡ Chassis Rollers | 20 | 10 | +4% speed |
 | 📦 Wider Hopper | 25 | 10 | +8 bin |
 | 🧲 Magnet Coil | 40 | 8 | +4% pickup radius |
-| 🧲 Mote Magnet | 50 | 8 | +6% suction range |
-| ✨ Shard Polisher | 60 | 10 | +3% shard gains |
+| 🛰️ Auto-Bay | 60 | 3 | hangar idle shards ×1/×2/×4 |
+| 🐗 Drivetrain Kit | 40 | 4 | +25% motor (heavy-dust drag) |
 | 🤖 Auto-Pilot Sensor | 100 | 1 | unlocks offline shards |
+| ✨ Shard Polisher | 60 | 10 | +3% shard gains |
 | 🍀 Lucky Bristles | 200 | 5 | +3% gold chance |
+| 🧲 Mote Magnet | 50 | 8 | +6% suction range |
 
-## 6. Physics & pickup model (what the numbers do)
+## Physics & pickup model (what the code actually does)
 
 Per mote, per frame (`dust.js`):
-1. **Brush sweep** (if `brushLevel > 0`): corner brushes push motes inward
+1. **Soak check** (mop bots): on wet floor (`wetAt ≥ 0.25`) a heavy mote's
+   effective mass halves and it pays ×1.5 value; static is fully negated.
+2. **Brush sweep** (if `brushLevel > 0`): corner brushes push motes inward
    from all sides, stronger with more brush levels.
-2. **Suction** (omnidirectional, not a cone): if `dist < suckR` where
-   `suckR = max(pickupR + 0.5, suctionRange × suction)`, apply force
-   `34 × suction × (1 - dist/suckR)²` toward the bot.
-3. **Magnet** (passive, if `magnetRange > 0`): constant weak pull within
-   `magnetRange + 2`.
-4. **Friction**, then **pickup** on `dist < pickupRadius` → mote consumed,
-   value goes to the bin (`bin = min(binMax, bin+1)`) and shards are banked.
+3. **Drift + bounce** off arena bounds; **tar** oozes in its own heading at
+   0.15 u/s, bouncing off walls and furniture.
+4. **Suction** (omnidirectional, not a cone): if `dist < suckR` where
+   `suckR = max(pickupR + 0.5, suctionRange × suction)` (0 while clogged),
+   apply acceleration `34 × suction × (1 − dist/suckR)² × 6 / (1 + 0.5·mass)`.
+   **Static** motes instead repel (and shove the bot back).
+5. **Magnet** (passive, if `magnetRange > 0`): pull `4 / (1 + 0.3·mass)`
+   within `magnetRange + 2`.
+6. **Friction**, then **pickup** on `dist < pickupRadius` **and bin not
+   full** → mote consumed, +1 to the bin (`bin = min(binMax, bin+1)`),
+   shards banked. **Puff** motes instead split into 3 dust motes.
+- **Heavy-dust drag:** motes with mass ≥ 0.3 inside `suckR` sum into
+  `dragMass`; the bot's speed is multiplied by
+  `motor / (motor + 0.12·dragMass)` (game.js). `motor = botDef.motor ×
+  meta Drivetrain × Heavy Motor picks`.
+- **Mop trail:** SUDS stamps wetness (`0.55/unit traveled`) into a 6-px/unit
+  grid that decays ~12s (`world.js updateWet`).
 
-Clog state scales suction ×0.5 in the formula but `suckR` is 0 while full, so
-in practice **clog = suction off + speed ÷1.25**; brush/magnet/touch still
-collect.
-
-## 7. World, themes & layouts
+## World, themes & layouts
 
 - Arena **44×44 world units**, square, letterbox-fit to the screen
   (devicePixelRatio capped at 2). Bot spawns center (22, 22).
 - **4 themes** (`THEMES`), each with floor/wall/dock/dirt palettes:
   🏠 Residential, 💼 Office, 🛒 Store, 🛰️ Space.
 - **Procedural rooms** (`js/levelgen.js`). Every level is *generated*, not
-  hand-authored. Each theme has a set of **room archetypes** — a hand-placed
-  "anchor" obstacle arrangement that gives the room its character (e.g.
-  bedroom = bed + nightstand, checkout = counter + stock line, cryo-bay =
-  hatch + consoles). On top of the anchor set, a small number of **random
-  filler** obstacles are drawn from a per-theme pool. Obstacles are AABBs
-  `{x, y, w, h, kind}`; `kind` (sofa/desk/shelf/console/… — 20 kinds) drives
-  the per-theme render style, unchanged.
-- Level n: `rot = floor((n-1)/12)`, theme = index `floor((n-1)/3) % 4`.
-  The archetype is chosen by shuffling the theme's archetypes with a
-  deterministic key derived from `(runSeed, level)`, then retrying placement
-  up to 60 times. Dirt count per §1; obstacle count ramps with `rot` (3 → 5)
-  and is capped — difficulty comes mostly from the dirt ramp.
+  hand-authored. Each theme has hand-placed **archetypes** (bedroom = bed +
+  nightstand, checkout = counters + stock, cryo-bay = hatch + consoles, …)
+  plus random **filler** from a per-theme pool. Obstacles are AABBs
+  `{x, y, w, h, kind}`; `kind` (20 kinds) drives the render style.
+- Level n: `rot = floor((n-1)/12)`, theme = `floor((n-1)/3) % 4`. The
+  archetype is chosen by shuffling with a deterministic key from
+  `(runSeed, level)`, retrying placement up to 60 times. Obstacle count
+  ramps `3 + rot`, capped at 5.
 - **Deterministic per seed.** `levelDef(level, runSeed = 0)` →
-  `generateLevel(themeKey, level, runSeed)`. A mulberry32 RNG makes a given
-  `(themeKey, level, runSeed)` fully reproducible. The game rolls a fresh
-  32-bit `runSeed` per run (so a room differs run to run); tests & the
-  balance sim use `runSeed 0` for a stable reference layout.
+  `generateLevel(themeKey, level, runSeed)` with a mulberry32 RNG. The game
+  rolls a fresh 32-bit `runSeed` per run; tests & the balance sim use
+  `runSeed 0`.
 
 ### Generation HARD RULES (enforced by `validateLayout`)
 * in-bounds, positive sizes, valid `kind`, obstacle count in [3, 9];
-* keep the top dock strip clear (y < ~9) — the dock sits at (22, 3.6), r 1.9;
-* keep the 4×4 clear pad around center (22, 22) — the bot spawns there;
-* **≥ 4 u corridors** between obstacles (and to walls) so the bot can pass —
-  the old handcrafted rooms used 4–7 u margins; this keeps generated rooms
-  equally navigable and gives the sim's local-steering bot 2 u of center
-  freedom to route around a piece;
-* **flood-fill connectivity**: the free space must be a single connected
-  region (no sealed pockets);
+* keep the top dock strip clear (y < 9) — the dock sits at (22, 3.6), r 1.9;
+* keep the 8×8 clear pad around center (22, 22) — the bot spawns there;
+* **≥ 4 u corridors** between obstacles (and to walls) so the bot can pass;
+* **flood-fill connectivity**: free space is one connected region;
 * **semantic guardrails** at placement time (bed gets a nightstand, media
-  faces the sofa, counters hug walls, hatch/console sit center-bottom, desks
-  in row bands) so rooms read as real rooms, not random boxes;
+  faces the sofa, counters hug walls, hatch/console/core sit center-bottom,
+  desks in row bands, shelves parallel);
 * a **`fallbackLayout(themeKey)`** is the last-resort output if no generated
   layout validates — it is itself always valid, so a run can never softlock.
 
-> The balance-sim steering bot (`tools/steer.mjs`) is *not* a human: it aims
-> at the nearest mote and commits to a detour waypoint around any blocking
-> obstacle (obstacle-aware raycast + waypoint commitment, plus a two-tier
-> clearance probe). A couple of base Shark runs still time out in tight
-> corner pockets — treat "fails" in `BALANCE_REVIEW.md` as an upper bound on
-> difficulty, not a game soft-lock (there is no failure state).
+> The balance-sim steering bot (`js/steer.js`, shared with the hangar bay)
+> is *not* a human: it aims at the nearest mote and commits to a detour
+> waypoint around blockers. A couple of base runs still time out in tight
+> corner pockets — treat "fails" in `BALANCE_REVIEW.md` as an upper bound
+> on difficulty, not a game soft-lock (there is no failure state).
+> **Input convention:** `steer()` returns a world direction with **+y =
+> down**, matching `bot.js`'s `atan2(ix, -iy)` — see `test/steer.test.js`
+> (a sign flip here silently mirrors all AI movement).
 
-## 8. Tech plan
+## Tech plan
 
 - **2D `<canvas>`**, hand-rolled circle-vs-AABB movement with wall/obstacle
-  sliding. No physics lib, no engine, **no build step, no npm** — pure static
-  ES modules, GitHub Pages serves the repo root as-is.
-- **Particles:** motes are plain JS objects in a free-list pool (one level's
-  dirt at a time, ≤300) — far below any particle cap.
+  sliding. No physics lib, no engine, **no build step, no npm deps** — pure
+  static ES modules, GitHub Pages serves the repo root as-is. (Exception:
+  `index.html` pulls the Press Start 2P webfont from Google Fonts; offline
+  it falls back to the monospace stack.)
+- **Particles:** motes are plain JS objects in a free-list pool (≤300 per
+  level, MAX_DUST=400).
 - **Audio:** tiny WebAudio synth blips (no assets): click, suck, gold,
-  clear, buy, upgrade, boost, dump. Mute button top-right.
+  clear, buy, upgrade, boost, dump. Mute button top-right (per-session).
 - **Save:** `localStorage` key `dustybot_save_v2`:
-  `{ shards, meta{}, lastSeen, bestTime, runs, bestShards }`.
+  `{ shards, meta{}, lastSeen, bestTime, runs, bestShards, bestLevel, bot,
+  idle{motes,ms}, _offlineGain(transient) }`.
   `bestTime` = fastest level-1 clear; `bestShards` = best single-run haul;
-  saved on level clear, purchase, and on `pagehide`/tab-hide.
-- **Offline calc:** on load, if `dt > 60s` and Auto-Pilot owned, bank
-  `rate * min(dt, 8h)` (rate per §1) into shards and remember it for the
-  one-time menu toast.
+  `bestLevel` = lifetime best level (gates bot unlocks). Saved on level
+  clear, purchase, and on `pagehide`/tab-hide.
+- **Offline calc:** on load, if Auto-Pilot owned, bank
+  `floor(rate * min(dt, 8h))` (rate per §1) and remember it for the one-time
+  menu toast.
 - **Perf targets (phone):** one canvas, one draw pass, no shadows beyond a
   fake blob ellipse under the bot, dpr ≤ 2, 60fps on mid-range Android.
 - **Mobile viewport:** `viewport-fit=cover`, `user-scalable=no`,
   `touch-action: none` on canvas, safe-area insets, portrait-first.
-- **PWA-lite:** `manifest.webmanifest` + inline `icon.svg` so it installs to
-  the phone home screen.
-- **Error trap:** `main.js` hooks `window.onerror`/`unhandledrejection` into
-  a visible on-page banner (mobile-friendly, no DevTools needed).
+- **PWA-lite:** `manifest.webmanifest` + inline `icon.svg`.
+- **Error trap:** `main.js` hooks `window.onerror`/`unhandledrejection`
+  into a visible on-page banner (mobile-friendly, no DevTools needed).
+- **Update delivery:** `?v=` cache-busters in `index.html` + live
+  `version.json` check with a reload banner. Bump all three version spots
+  with `npm run bump`; `npm test` fails if they drift.
 
 ### File layout
 ```
@@ -215,43 +240,45 @@ collect.
   icon.svg
   css/style.css
   js/main.js              # bootstrap, save/load, offline calc, loop, wiring
-  js/game.js              # run state machine (menu/intro/run/pick), shards
-  js/world.js             # 2D canvas world, themes, obstacles, rendering
+  js/game.js              # run state machine (menu/intro/run/pick/pause)
+  js/world.js             # 2D canvas world, themes, obstacles, wet layer
   js/levelgen.js          # procedural room generator (seeded, guarded, pure)
-  js/bot.js               # bot entity: movement, boost, bin, clog, brushes
-  js/dust.js              # mote system: spawn, suction/brush/magnet, pickup
+  js/bot.js               # bot entity: movement, bounce, boost, bin, mop stamp
+  js/dust.js              # motes: suction/brush/magnet/pickup/soak/drag/types
+  js/steer.js             # shared steering AI (hangar bay + balance sim)
+  js/hangar.js            # hangar auto-bay idle sim (own mini world)
   js/controls.js          # joystick + tap-to-move + keyboard
-  js/upgrades.js          # BOTS, run/meta upgrades, themes, levelDef, BALANCE
-  js/ui.js                # screens, HUD, pick panel, toasts
+  js/upgrades.js          # BOTS, upgrades, themes, levelDef, BALANCE (truth)
+  js/ui.js                # screens, HUD, pick panel, toasts, portraits
+  js/help.js              # shared help content (data-driven, testable)
   js/audio.js             # WebAudio synth
   js/palette.js           # shared canvas/CSS palette
+  js/version.js           # VERSION constant (bump via npm run bump)
+  test/                   # node --test: dust, steer, upgrades, levelgen,
+                          # idle, help, version-sync
+  tools/sim-bots.mjs      # headless balance sim (real Bot+Dust+steer)
 ```
 
-### GitHub Pages
-- Repo → Settings → Pages → Deploy from branch `/` (root).
-- All relative URLs (`./js/...`); no base path, no CDN, no vendor files.
-- Workflow `.github/workflows/pages.yml` deploys on push to main.
-
-## 9. Balancing model (how numbers stay sane)
+## Balancing model (how numbers stay sane)
 
 - **Shard income:** active play ≈ per-dust (0.05/mote) + trickle (0.05/s) +
-  level bonus (2). A 26-mote level 1 ≈ ~2–4 ✦. Late levels (100+ motes,
-  higher gold mix) ≈ 10–20 ✦ + bonuses.
-- **Meta pacing:** `base * 1.6^lvl` → Factory Suction L10 ≈ 328 ✦,
-  reachable in a few mid-game runs. New meta level ≈ 0.5–2 runs early,
-  2–5 runs late.
-- **AFK cap:** 0.8 ✦/h (×polish), 8h cap → a full day ≈ 6.4 ✦. Deliberately
-  ~10× slower than active play.
+  level bonus (2 + 0.05·(lvl−1)). A level-1 room ≈ 3–5 ✦; late levels
+  (100+ motes, heavier mix) ≈ 10–20 ✦ + bonuses.
+- **Meta pacing:** `base * 1.6^lvl` → Factory Suction L10 ≈ 328 ✦.
+- **AFK cap:** 1.2 ✦/h (×polish ×bestLevel), 8h cap. Deliberately ~10×
+  slower than active play.
 - **Guardrails:** suction meta capped ×3; boost cooldown floor 1.0s; dirt
-  count capped 300 (below MAX_DUST=400); in-run pick clamps keep suckR < arena;
-  bin is the only "soft fail" (clog) and it never blocks level completion.
+  count capped 300 (below MAX_DUST=400); in-run pick clamps keep suckR <
+  arena; bin is the only "soft fail" (clog) and it never blocks level
+  completion.
 
-## 10. QA checklist (manual playtest)
+## QA checklist (manual playtest)
 
 See `REVIEW.md` P4 for the full ordered checklist. Highlights:
-- [ ] All 3 bots: distinct feel, clog at their own binMax, dock dumps.
-- [ ] Long run (200+ levels): upgrade picks never drain, diminishing returns
-  keep stats bounded, no freeze.
+- [ ] All 6 bots: distinct feel, clog at their own binMax, dock dumps.
+- [ ] Long run (200+ levels): picks never drain, diminishing returns keep
+      stats bounded, no freeze; static/tar/puff appear at their gears.
 - [ ] Refresh mid-run: shards/best stats survive (pagehide save).
-- [ ] Offline toast fires once after 60s+ away with Auto-Pilot.
-- [ ] Joystick + tap + keyboard + boost all work; safe-area layout on phone.
+- [ ] Offline toast fires once with Auto-Pilot; Auto-Bay bay bot actually
+      chases motes (steer sign regression guard: `test/steer.test.js`).
+- [ ] Joystick + tap + keyboard + boost + pause all work; safe-area on phone.
