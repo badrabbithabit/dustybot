@@ -30,6 +30,7 @@ export class World {
     this.theme = { ...DEFAULT_THEME };
     this.obstacles = [];
     this._floorCv = null;
+    this._floorKey = null;     // raster identity of the cached floor canvas
     this._initWet();           // wet-floor layer (mopping bots)
 
     this._resize();            // safe now: this.theme + this.W/H exist
@@ -60,13 +61,17 @@ export class World {
     this._wetCv = document.createElement('canvas');
     this._wetCv.width = gw; this._wetCv.height = gh;
     this._wetCvCtx = this._wetCv.getContext('2d');
-    this._wetImg = this._wetCvCtx.createImageData(gw, gh);
-    this._wetDirty = false;
+    this._wetImg = this._wetCvCtx.createImageData(gw, gh);   // allocated once, reused
+    this._wetCells = new Set();  // indices of cells with wetness > 0 (sparse)
+    this._wetPrev = [];          // cells drawn by the previous drawWet()
+    this._wetRect = null;        // [x, y, w, h] of that last upload
+    this._wetEnergy = 0;
   }
 
   _clearWet() {
     if (this._wetGrid) this._wetGrid.fill(0);
-    this._wetDirty = true;
+    this._wetCells.clear();
+    this._wetEnergy = 0;         // drawWet() wipes the last rect on the next frame
   }
 
   // Add wetness in a soft disc of radius `radius` (world units) at (x, y).
@@ -87,7 +92,7 @@ export class World {
         const fall = Math.sqrt(1 - d2);              // soft edge
         const i = yy * gw + xx;
         const nv = Math.min(1, g[i] + amt * fall);
-        if (nv > g[i]) { g[i] = nv; this._wetDirty = true; }
+        if (nv > g[i]) { g[i] = nv; this._wetCells.add(i); }
       }
     }
   }
@@ -101,34 +106,57 @@ export class World {
     return this._wetGrid[iy * gw + ix];
   }
 
-  // Fade the wetness over time and refresh the visual buffer.
+  // Fade the wetness over time. O(active cells): only the Set is scanned, and
+  // cells that dry out are dropped from it (the visual buffer is refreshed by
+  // drawWet() during render, never here).
   updateWet(dt) {
-    if (!this._wetGrid) return;
+    if (!this._wetGrid || !this._wetCells.size) { this._wetEnergy = 0; return; }
     const g = this._wetGrid;
     const decay = Math.exp(-0.08 * dt);              // ~12s to mostly dry
     let energy = 0;
-    for (let i = 0; i < g.length; i++) {
+    for (const i of this._wetCells) {
       const v = g[i] * decay;
-      g[i] = v < 0.01 ? 0 : v;
-      energy += g[i];
+      if (v < 0.01) { g[i] = 0; this._wetCells.delete(i); }   // dry -> drop it
+      else { g[i] = v; energy += v; }
     }
-    if (energy < 0.5) {                               // fully dry
-      if (this._wetDirty) { this._wetCvCtx.clearRect(0, 0, this._wetW, this._wetH); this._wetDirty = false; }
-      this._wetEnergy = 0;
-      return;
-    }
-    this._wetEnergy = energy;
-    this._wetDirty = true;   // keep fading while any wetness remains
-    // Rebuild the small RGBA buffer from the grid (blue puddle, alpha = wet).
+    this._wetEnergy = energy < 0.5 ? 0 : energy;     // below this it reads as dry
+  }
+
+  // Refresh the small RGBA buffer (blue puddle, alpha = wet) from the ACTIVE
+  // cells only, then upload just their bounding box. Called once per frame
+  // from render(); it also wipes the previous frame's rect so fading trails
+  // leave no residue once everything has dried.
+  drawWet() {
+    if (!this._wetGrid) return;
     const d = this._wetImg.data;
-    for (let i = 0, n = g.length; i < n; i++) {
-      const v = g[i];
+    // (a) undo last frame: stale pixels transparent in the buffer + on the canvas
+    if (this._wetPrev.length) {
+      for (const i of this._wetPrev) d[i * 4 + 3] = 0;
+      const [px, py, pw, ph] = this._wetRect;
+      this._wetCvCtx.clearRect(px, py, pw, ph);
+      this._wetPrev = []; this._wetRect = null;
+    }
+    const cells = this._wetCells;
+    if (!cells.size) return;                         // dry floor: nothing to draw
+    // (b) write the wet cells, tracking their bounding box
+    const gw = this._wetW;
+    let x0 = this._wetW, y0 = this._wetH, x1 = -1, y1 = -1;
+    for (const i of cells) {
+      const v = this._wetGrid[i];
+      if (v <= 0) continue;
+      const yy = (i / gw) | 0, xx = i - yy * gw;
+      if (xx < x0) x0 = xx; if (xx > x1) x1 = xx;
+      if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
       const o = i * 4;
-      d[o] = 90; d[o + 1] = 165; d[o + 2] = 235;       // water blue
+      d[o] = 90; d[o + 1] = 165; d[o + 2] = 235;     // water blue
       d[o + 3] = Math.min(200, v * 200 | 0);
     }
-    this._wetCvCtx.putImageData(this._wetImg, 0, 0);
-    this._wetDirty = false;
+    if (x1 < x0) return;
+    // (c) upload only the dirty rect instead of the whole grid
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    this._wetCvCtx.putImageData(this._wetImg, 0, 0, x0, y0, w, h);
+    this._wetPrev = Array.from(cells);
+    this._wetRect = [x0, y0, w, h];
   }
 
   _resize() {
@@ -138,6 +166,8 @@ export class World {
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
     this._computeFit();
+    // Cheap: _buildFloor() no-ops when the raster size/dpr/theme are unchanged,
+    // so mobile URL-bar resizes just redraw the cached floor.
     this._buildFloor();
   }
 
@@ -177,18 +207,20 @@ export class World {
   // Pre-render the floor with a real per-theme texture, then vignette.
   _buildFloor() {
     const css = Math.max(1, Math.round(this.W * this.scale));
+    const key = `${css}x${this.dpr}x${(this.theme && this.theme._floor) || 'residential'}`;
+    if (this._floorCv && key === this._floorKey) return;   // raster unchanged: reuse
     const cv = document.createElement('canvas');
     cv.width = cv.height = css;
     const c = cv.getContext('2d');
     const th = this.theme || DEFAULT_THEME; // never throw if theme missing
-    const key = th._floor || 'residential';
+    const floor = th._floor || 'residential';
 
     c.fillStyle = th.floorB;
     c.fillRect(0, 0, css, css);
-    if (key === 'residential') this._floorPlanks(c, css, th);
-    else if (key === 'office') this._floorTiles(c, css, th);
-    else if (key === 'store') this._floorCarpet(c, css, th);
-    else if (key === 'space') this._floorPlate(c, css, th);
+    if (floor === 'residential') this._floorPlanks(c, css, th);
+    else if (floor === 'office') this._floorTiles(c, css, th);
+    else if (floor === 'store') this._floorCarpet(c, css, th);
+    else if (floor === 'space') this._floorPlate(c, css, th);
     else this._floorTiles(c, css, th);
 
     // vignette
@@ -201,6 +233,7 @@ export class World {
     }
 
     this._floorCv = cv;
+    this._floorKey = key;
   }
 
   // Residential: staggered hardwood planks.
@@ -281,7 +314,9 @@ export class World {
     const tl = this.toScreen(0, 0);
     c.imageSmoothingEnabled = true;
     if (this._floorCv) c.drawImage(this._floorCv, tl.x, tl.y, this.W * this.scale, this.H * this.scale);
-    // wet trail (mopping bot), on top of the floor, under walls/obstacles
+    // wet trail (mopping bot), on top of the floor, under walls/obstacles.
+    // drawWet() runs every frame so the last rect gets cleared when it dries.
+    this.drawWet();
     if (this._wetEnergy > 0) {
       c.imageSmoothingEnabled = true;
       c.globalAlpha = 0.9;
