@@ -56,10 +56,13 @@ plus idle/offline trickle channels (gated behind meta unlocks).
   accumulate in an accumulator; whole shards go to the save instantly).
 - Passive trickle: `0.05 ✦/s * shardMult` while a level is being played.
 - Level clear: `2 + 0.05·(level−1)` ✦.
-- **Offline** (requires Auto-Pilot Sensor meta): on load,
-  `shards += floor(1.2/h * (1 + 0.05*polishLvl) * (1 + 0.12*(bestLevel−1)) * min(elapsed, 8h))`,
-  granted as a whole number, surfaced as a one-time "while you were away"
-  toast. Deliberately slow: AFK is a drip, active play is the real economy.
+- **Offline** (requires Auto-Pilot Sensor meta): on load, absences of
+  **≥ 60s** grant `floor(1.2/h * (1 + 0.05*polishLvl) * (1 + 0.12*(bestLevel−1)) *
+  min(elapsed, 8h))` whole shards, surfaced as a one-time "while you were
+  away" toast; the sub-shard remainder is carried in `save._offFrac` so quick
+  reloads neither drop nor double-grant fractions (`offlineGrant`,
+  `js/upgrades.js`). Deliberately slow: AFK is a drip, active play is the
+  real economy.
 - **Hangar Auto-Bay** (requires Auto-Bay meta, max 3 → ×0/×1/×2/×4): while
   the hangar screen is open, a SUDS mop-bot visibly cleans a mini bay
   (`js/hangar.js`, driven by the real Bot/DustSystem/steer). Shards accrue
@@ -204,10 +207,12 @@ Per mote, per frame (`dust.js`):
 ## Tech plan
 
 - **2D `<canvas>`**, hand-rolled circle-vs-AABB movement with wall/obstacle
-  sliding. No physics lib, no engine, **no build step, no npm deps** — pure
-  static ES modules, GitHub Pages serves the repo root as-is. (Exception:
-  `index.html` pulls the Press Start 2P webfont from Google Fonts; offline
-  it falls back to the monospace stack.)
+  sliding. No physics lib, no engine, **no build step, no npm deps, no CDN**
+  — pure static ES modules, GitHub Pages serves the repo root as-is. The
+  Press Start 2P webfont (SIL OFL 1.1) is self-hosted at
+  `fonts/press-start-2p.woff2`.
+- **Update check:** `semverNewer(server, bundled)` — a server rollback does
+  NOT prompt a reload.
 - **Particles:** motes are plain JS objects in a free-list pool (≤300 per
   level, MAX_DUST=400).
 - **Audio:** tiny WebAudio synth blips (no assets): click, suck, gold,
@@ -238,6 +243,7 @@ Per mote, per frame (`dust.js`):
   index.html              # screens: menu / select / hangar + HUD
   manifest.webmanifest
   icon.svg
+  fonts/press-start-2p.woff2   # self-hosted webfont (SIL OFL 1.1)
   css/style.css
   js/main.js              # bootstrap, save/load, offline calc, loop, wiring
   js/game.js              # run state machine (menu/intro/run/pick/pause)
@@ -255,7 +261,7 @@ Per mote, per frame (`dust.js`):
   js/palette.js           # shared canvas/CSS palette
   js/version.js           # VERSION constant (bump via npm run bump)
   test/                   # node --test: dust, steer, upgrades, levelgen,
-                          # idle, help, version-sync
+                          # idle, help, version-sync (4 spots incl. package.json)
   tools/sim-bots.mjs      # headless balance sim (real Bot+Dust+steer)
 ```
 

@@ -12,6 +12,12 @@ Source of truth for all numbers: `js/upgrades.js`.
 > **sim bot detours around obstacles** (`tools/steer.mjs`). The §3/§10 numbers were measured on
 > handcrafted layouts with the earlier non-detouring AI. See **§11** for the current
 > procedural-level numbers.
+>
+> **Update (2026-09-29):** a sign regression in `js/steer.js` (introduced 2026-09-13, fixed in
+> `9efea73` / v1.1.3 — `steer()` emitted mirrored `y`, so the sim bot drove *away* from motes)
+> had **silently invalidated every sim run since 2026-09-13**. §11 has been regenerated
+> post-fix (steer fix + the later `dust.js`/`game.js` puff/roll-share fixes); the §12 tables
+> were measured inside the regression window and are stale.
 
 ---
 
@@ -343,53 +349,71 @@ Mi ~14.4 s, Shark ~10.2 s (all end at brushLevel 5 with 4 pickup bonuses —
 the original intended count; the interim additive fix had accidentally handed
 out a 5th). `npm test` 9/9.
 
-## 11. Procedural levels + detour-capable sim bot (2026-09-10)
+## 11. Procedural levels + detour-capable sim bot (2026-09-10; regenerated 2026-09-29 post steer-fix)
 
 Two independent changes moved the numbers, so §3/§10 no longer reflect the shipped
 geometry or the sim AI. This addendum is the current source of truth for clear
 **times on the current levels**; the bot/upgrade *identity* analysis in §4 (bin-is-the-hidden
-stat, Shark two-faced, Mi front-loaded, suction-snowball, trickle-inverts-speed) is unchanged
-by either.
+stat, suction-snowball, trickle-inverts-speed) still holds, but the regenerated post-fix
+tables soften two §4 claims: Shark is **no longer the fastest mid bot** (56.1 s — now the
+slowest; the §12 `suctionRange` cap removed its snowball) and Mi is **no longer the worst at
+max** (17.0 s — fastest of the original three).
 
 **Level geometry is now procedural** (`js/levelgen.js`). Every level is generated per
 `(theme, level, runSeed)` from per-theme room archetypes + guarded random filler:
 ≥4 u corridors, flood-fill connectivity, dock strip + spawn pad clear, 3–9 obstacles.
 Old rooms were 3–5 hand-placed; the generator averages **4.91**. A 2400-level sweep (200
 seeds × 12 levels) produced **0 invalid / 0 fallback** layouts. The `levelDef(level, runSeed=0)`
-surface is unchanged; the sim still uses seed 0, so the per-level *clear-time shape* (dirt
-count, dock distance) is comparable to §3 even though the obstacle layout differs.
+surface is unchanged; the sim still uses seed 0 and now samples **14 levels (L1…L52) across all
+six bots**, so the per-level *clear-time shape* (dirt count, dock distance) is comparable to §3
+even though the obstacle layout differs.
 
-**The sim bot now detours** (`tools/steer.mjs`, sim proxy only — the shipped game is
-human-controlled, so this is not a gameplay change). The old 1.5 u point-probe AI oscillated
+**The sim bot now detours** (steering lives in `js/steer.js`, shared with the hangar Auto-Bay
+idle sim; `tools/steer.mjs` re-exports it — the shipped game is human-controlled, so this is
+not a gameplay change). The old 1.5 u point-probe AI oscillated
 below an obstacle instead of routing around it (§1 caveat). It now raycasts the obstacles,
 commits to a detour waypoint around the blocking piece, and re-plans at the gate. A grid
 pathfinder and a reachability-prefixed corner picker were both tried and reverted (net-negative
-on aggregate). Net effect: base fails **8 → 2** (both Shark: L1r2, L31r2), i.e. the §1
-"treat fails as an upper bound" caveat now applies to essentially nothing.
+on aggregate). Net effect, measured post-fix: base fails are **0–2 per bot** — 4 in 72 base runs
+(mi L31r2, shark L22r3, Bulldog L7r2 + L16r3), i.e. the §1 "treat fails as an upper bound"
+caveat now applies to essentially nothing.
 
-**Current sim (procedural levels, seed 0; `node tools/sim-bots.mjs`):**
+**Current sim (procedural levels, seed 0, post steer-fix + puff/roll-share fixes;
+`node tools/sim-bots.mjs`, 2026-09-29):**
 
-| scenario | Roomba | Mi | Shark |
-|---|---|---|---|
-| **base** clear / fails | 54.7 s / **0** | 48.5 s / **0** | 64.9 s / 2 (L1r2, L31r2) |
-| **mid** clear / fails | 40.9 s / 0 | 36.2 s / 0 | 36.0 s / 0 |
-| **maxed** clear / fails | 15.0 s / 0 | 20.2 s / 1 | 9.8 s / 0 |
-| boost duty (8 s hold) | 120/480 = 25.0 % | — | — |
+| scenario | Roomba | Mi | Shark | SUDS | Bulldog | ZIP |
+|---|---|---|---|---|---|---|
+| **base** clear / fails | 64.4 s / 0 | 59.0 s / 1 | 72.8 s / 1 | 71.9 s / 0 | 71.3 s / 2 | **51.6 s** / 0 |
+| **mid** clear / fails | 49.4 s / 0 | 49.2 s / 1 | 56.1 s / 1 | 58.7 s / 0 | 47.1 s / 0 | **39.3 s** / 0 |
+| **maxed** clear / fails | 23.9 s / 1 | **17.0 s** / 0 | 17.2 s / 0 | 23.1 s / 0 | 23.3 s / 1 | 20.0 s / 1 |
+| boost duty (8 s hold) | 120/480 = 25.0 % | — | — | — | — | — |
+
+Base clear times span 51.6–72.8 s with 0–2 fails per bot; the maxed fails (Roomba, Bulldog,
+ZIP — one run each) are the same detour-AI oscillation artifact, not gameplay. ZIP is the
+fastest bot at base *and* mid; Shark is the slowest at both.
 
 vs the §3 handcrafted baseline (base): Roomba 65.6 s / 2, Mi 58.0 s / 1, Shark 96.8 s / 8.
-Procedural levels are **faster and cleaner on every bot** at base (mean ~15–25 % less time,
-26 fewer fails) — the ≥4 u corridor guardrail removed the corner-pocket stalls that the old
-non-detouring AI used to hit.
+Shark is still much faster on procedural levels (−25 %); Roomba/Mi now sit within a few % of
+the old baseline because the §12 density increase + suction-range nerf pushed base times back
+up, offsetting the geometry speed-up (the ≥4 u corridor guardrail removed the corner-pocket
+stalls that the old non-detouring AI used to hit).
 
-Base per-level clear (s), L1…L34 step 3:
+Base per-level clear (s), L1…L52 (step 3, then L40/L52):
 
-| bot | L1 | L4 | L7 | L10 | L13 | L16 | L19 | L22 | L25 | L28 | L31 | L34 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Roomba | 34 | 41 | 42 | 48 | 59 | 59 | 59 | 64 | 66 | 59 | 67 | 59 |
-| Mi | 27 | 35 | 35 | 44 | 47 | 52 | 56 | 60 | 61 | 53 | 61 | 52 |
-| Shark | 38 | 44 | 43 | 50 | 58 | 59 | 61 | 56 | 58 | 62 | 73 | 55 |
+| bot | L1 | L4 | L7 | L10 | L13 | L16 | L19 | L22 | L25 | L28 | L31 | L34 | L40 | L52 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Roomba | 38 | 44 | 51 | 62 | 60 | 66 | 66 | 71 | 69 | 70 | 68 | 70 | 82 | 85 |
+| Mi | 34 | 41 | 43 | 44 | 59 | 55 | 55 | 63 | 60 | 59 | 61 | 60 | 61 | 73 |
+| Shark | 46 | 49 | 49 | 58 | 68 | 70 | 68 | 67 | 83 | 76 | 82 | 72 | 79 | 93 |
+| SUDS | 45 | 52 | 55 | 55 | 70 | 69 | 66 | 78 | 73 | 74 | 75 | 71 | 137 | 87 |
+| Bulldog | 40 | 46 | 53 | 53 | 59 | 62 | 71 | 68 | 74 | 70 | 70 | 65 | 71 | 75 |
+| ZIP | 32 | 38 | 41 | 50 | 49 | 53 | 53 | 56 | 52 | 55 | 60 | 59 | 59 | 66 |
 
-`npm test` → 21/21 (9 upgrade + 12 `test/levelgen.test.js`).
+(SUDS' L40 = 137 s is a single-run AI routing wobble, not a level problem — its neighbours
+run 71–87 s.)
+
+`npm test` → 47/47 (includes `test/steer.test.js`, added with the sign fix to guard exactly
+this regression class).
 
 ## 12. "Starts too strong" — denser start + tighter base suction
 
