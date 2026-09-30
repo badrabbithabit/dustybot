@@ -34,7 +34,7 @@ export function setHud(s) {
   // remaining-dirt meter: starts full, empties as you clean
   const frac = s.dirtTotal > 0 ? s.dirt / s.dirtTotal : 0;
   const df = $('dirt-fill');
-  df.style.width = (frac * 100) + '%';
+  df.style.width = Math.min(100, frac * 100) + '%';   // clamp: splinters can push dirt past the start total
   df.style.background = frac < 0.33 ? 'var(--gold)' : 'var(--accent)';
   $('dirt-label').textContent = `${s.dirt} left`;
   $('level-badge').textContent = `${s.themeIcon || ''} ${s.level}`;

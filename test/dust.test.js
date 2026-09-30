@@ -1,4 +1,4 @@
-// Tests for bin-full behavior (js/dust.js + js/bot.js).
+// Tests for bin-full behavior (js/dust.js + js/bot.js) and puff motes.
 // Regression: a full bin must block pickup, not just suction — a mote at the
 // bot's position (brush-swept or walked over) used to still get collected.
 // Drives the REAL Bot + DustSystem on a minimal obstacle-free fake world.
@@ -75,4 +75,75 @@ test('addDust: full flag tracks THIS bot\'s binMax; dumpBin clears it', () => {
     assert.equal(v, bot.stats.binMax);
     assert.equal(bot.full, false, `${botId}: dumpBin clears full`);
   }
+});
+
+// ---- puff motes (split-on-vacuum) + the cumulative spawn counter ----
+// Every mote (level dirt AND puff splinters) goes through the spawn funnel, so
+// dust.spawned is the level's MOVING dirt total; game.js clears a level against
+// it, not against the fixed def.dirtCount.
+const PUFF_DEF = { bigShare: 0, debrisShare: 0, staticShare: 0, tarShare: 0, puffShare: 1 };
+
+// `count` puff motes (gold off, all shares on puff), one of them parked on the
+// bot so a single update() vacuums exactly it. The rest are parked in a corner,
+// out of suction reach, so they can't skew the counts.
+function puffField(count) {
+  const world = makeWorld();
+  const stats = { ...makeRunStats({}, 'roomba'), goldChance: 0 };
+  const bot = new Bot(world, stats);
+  bot.x = world.W / 2; bot.y = world.H / 2;
+  const dust = new DustSystem(world);
+  dust.spawnLevel(count, null, stats, PUFF_DEF);
+  // the split is driven purely by type, so make the target mote a puff for sure
+  // (puffShare 1 makes them ~all of the field; shares > cap normalize to dust)
+  const puff = dust.items.find(it => it.type === 'puff') || dust.items[0];
+  puff.type = 'puff'; puff.val = 2;   // 2 = the value _rollType gives a real puff
+  for (const it of dust.items) if (it !== puff) { it.x = 2; it.y = world.H - 2; }
+  puff.x = bot.x + 0.5; puff.y = bot.y;
+  return { world, stats, bot, dust, puff };
+}
+
+test('spawned: vacuuming a puff grows the level total by its 3 splinters', () => {
+  const { world, stats, bot, dust, puff } = puffField(12);
+  assert.equal(dust.spawned, 12, 'spawnLevel sets the baseline total');
+  assert.equal(puff.type, 'puff');
+  dust.update(1 / 60, bot, stats, CB, world);
+  assert.equal(dust.spawned, 12 + 3, 'splinters count toward the dirt total');
+  assert.equal(dust.count, 12 - 1 + 3, 'one puff gone, three splinters on the floor');
+});
+
+test('bin: a puff pickup adds exactly 1 to the bin (no double-bin)', () => {
+  const { world, stats, bot, dust } = puffField(4);
+  dust.update(1 / 60, bot, stats, CB, world);
+  assert.equal(bot.bin, 1, 'puff = 1 bin slot, splinters bin separately later');
+});
+
+test('blocked splinters: a puff is never consumed for zero value', () => {
+  const { world, stats, bot, dust } = puffField(1);
+  // every splinter spot is blocked (and the pool is not the limit): the puff
+  // falls through and pays out as a normal mote instead of vanishing for free
+  dust.world = { ...world, blocked() { return true; } };
+  let paid = null;
+  const cb = { onCollect: (v) => { paid = v; }, onSuck: () => {}, onGold: () => {} };
+  dust.update(1 / 60, bot, stats, cb, world);
+  assert.equal(dust.count, 0, 'the puff itself is vacuumed');
+  assert.equal(dust.spawned, 1, 'no splinters were spawned');
+  assert.equal(paid, 2, 'the player gets the puff value (2), not 0');
+  assert.equal(bot.bin, 1);
+});
+
+test('shares > 1: the type roll stays valid and common dust survives', () => {
+  const d = new DustSystem(makeWorld());
+  // mirror what spawnLevel passes: type shares on the level def, gold on stats.
+  // These sum to 1.21 of the non-gold roll (deep-gear + max goldChance).
+  d._def = { bigShare: 0.30, debrisShare: 0.25, staticShare: 0.22, tarShare: 0.22, puffShare: 0.22 };
+  const stats = { goldChance: 0.5 };
+  const known = new Set(['dust', 'big', 'debris', 'gold', 'static', 'tar', 'puff']);
+  const seen = new Set();
+  for (let i = 0; i < 1000; i++) {
+    const t = d._rollType(stats);
+    assert.equal(typeof t.type, 'string');
+    assert.ok(known.has(t.type), `unknown mote type ${t.type}`);
+    seen.add(t.type);
+  }
+  assert.ok(seen.has('dust'), 'shares are normalized: common dust keeps a floor');
 });

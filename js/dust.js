@@ -11,6 +11,11 @@ import { BALANCE } from './upgrades.js';
 import { PAL } from './palette.js';
 
 const MAX_DUST = 400;
+// Max share of the NON-gold roll the special types (big/debris/static/tar/puff)
+// may take. Above it the shares are scaled down proportionally so common dust
+// always keeps a floor (at high gears + max goldChance they used to sum past 1
+// and swallow the 'dust' remainder completely).
+const SPECIAL_CAP = 0.85;
 
 // Per-mote-type radius; colors come from the active theme (see draw).
 const MOTE_R = { dust: 0.30, big: 0.50, debris: 0.36, gold: 0.42, static: 0.40, tar: 0.62, puff: 0.55 };
@@ -20,6 +25,7 @@ export class DustSystem {
     this.world = world;
     this.items = [];
     this._free = [];
+    this.spawned = 0;         // cumulative motes spawned this level (incl. puff splinters)
     this.theme = null;        // theme object for coloring (set by spawnLevel)
   }
 
@@ -29,6 +35,7 @@ export class DustSystem {
   // `def` (levelDef result) carries the level's big/debris share (difficulty gears).
   spawnLevel(count, theme, stats, def) {
     this.reset();
+    this.spawned = 0;         // the level's moving dirt total (grows when puffs split)
     this.theme = theme;
     this._stats = stats || null;   // gold chance (meta + upgrades) applies from level 1
     this._def = def || null;       // bigShare/debrisShare (difficulty gears)
@@ -40,6 +47,10 @@ export class DustSystem {
     this.items = [];
   }
 
+  // Gold is rolled first (stats.goldChance); the remaining roll is bucketed over
+  // the type shares, which are shares of the NON-gold motes. The bucket walk is
+  // scaled by w so the special types never cover more than SPECIAL_CAP of that
+  // roll — the rest is common dust (see SPECIAL_CAP).
   _rollType(stats) {
     const def = this._def || {};
     const bigShare = def.bigShare ?? 0.12;      // of the non-gold motes
@@ -47,13 +58,19 @@ export class DustSystem {
     const staticShare = def.staticShare ?? 0;   // gear-gated new dirt (levelDef)
     const tarShare = def.tarShare ?? 0;
     const puffShare = def.puffShare ?? 0;
-    const roll = Math.random();
-    if (roll < stats.goldChance) return { type: 'gold', val: 5 };
-    if (roll < stats.goldChance + debrisShare) return { type: 'debris', val: 2 };
-    if (roll < stats.goldChance + debrisShare + bigShare) return { type: 'big', val: 3 };
-    if (roll < stats.goldChance + debrisShare + bigShare + staticShare) return { type: 'static', val: 3 };
-    if (roll < stats.goldChance + debrisShare + bigShare + staticShare + tarShare) return { type: 'tar', val: 4 };
-    if (roll < stats.goldChance + debrisShare + bigShare + staticShare + tarShare + puffShare) return { type: 'puff', val: 2 };
+    if (Math.random() < stats.goldChance) return { type: 'gold', val: 5 };
+    const sum = debrisShare + bigShare + staticShare + tarShare + puffShare;
+    const w = sum > SPECIAL_CAP ? SPECIAL_CAP / sum : 1;   // normalize the overflow
+    let r = Math.random();
+    if (r < debrisShare * w) return { type: 'debris', val: 2 };
+    r -= debrisShare * w;
+    if (r < bigShare * w) return { type: 'big', val: 3 };
+    r -= bigShare * w;
+    if (r < staticShare * w) return { type: 'static', val: 3 };
+    r -= staticShare * w;
+    if (r < tarShare * w) return { type: 'tar', val: 4 };
+    r -= tarShare * w;
+    if (r < puffShare * w) return { type: 'puff', val: 2 };
     return { type: 'dust', val: BALANCE.dirt.moteValue };
   }
 
@@ -80,6 +97,7 @@ export class DustSystem {
     it.phase = Math.random() * 6.28;
     it.soaked = false;
     this.items.push(it);
+    this.spawned++;
     return it;
   }
 
@@ -95,6 +113,7 @@ export class DustSystem {
     it.phase = Math.random() * 6.28;
     it.soaked = false;
     this.items.push(it);
+    this.spawned++;   // splinters count toward the level's dirt total
     return it;
   }
 
@@ -181,13 +200,17 @@ export class DustSystem {
       if (canVacuum && dist < pickupR) {
         let gained = soaked && it.mass >= heavyMass
           ? Math.round(it.val * BALANCE.mop.valueMult) : it.val;
-        // puff: vacuuming it splits it into 3 smaller motes (the cleaning makes work)
+        // puff: vacuuming it splits it into 3 smaller motes (the cleaning makes
+        // work), and the puff itself pays nothing — the splinters carry its value.
+        // If NO splinter landed (blocked spot / pool cap) the puff is NOT thrown
+        // away for free: it falls through and pays out like a normal mote.
         if (it.type === 'puff') {
-          gained = 0;
+          let splinters = 0;
           for (let k = 0; k < 3; k++) {
             const a = Math.random() * 6.283, d = 0.6 + Math.random() * 0.8;
-            this._spawnPiece(it.x + Math.cos(a) * d, it.y + Math.sin(a) * d, 'dust', 1);
+            if (this._spawnPiece(it.x + Math.cos(a) * d, it.y + Math.sin(a) * d, 'dust', 1)) splinters++;
           }
+          if (splinters) gained = 0;
         }
         this.items.splice(i, 1);
         this._free.push(it);

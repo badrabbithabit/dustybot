@@ -29,7 +29,6 @@ export class Game {
     this._frac = 0;
     this._fullWarned = false;
     this._introTimer = 0;
-    this._levelDirtTotal = 0;
     this._runSeed = 0;      // per-run layout seed (set in newRun)
     this._def = null;       // cached levelDef for the current level
     this._screen = 'menu';  // which menu screen is visible (hangar idle needs it)
@@ -101,7 +100,6 @@ export class Game {
     this.bot.heading = -Math.PI / 2; // face up, toward the dock
 
     // scatter the level's fixed themed dirt (does not regenerate)
-    this._levelDirtTotal = def.dirtCount;
     this._cleared = 0;   // reset the dumped-dirt counter for this level
     this.dust.spawnLevel(def.dirtCount, def.theme, this.stats, def);
 
@@ -164,7 +162,10 @@ export class Game {
     if (this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
       const v = this.bot.dumpBin();
-      this._cleared = Math.min(this._levelDirtTotal, this._cleared + v);
+      // dust.spawned is the MOVING total: puff splinters add motes after the
+      // level starts, so the fixed def.dirtCount would under-count (and let the
+      // level clear while splinters were still on the floor).
+      this._cleared = Math.min(this.dust.spawned, this._cleared + v);
       Audio.sfx.dump();
       UI.toast(`Bin dumped — ${v} motes`, 'good');
     }
@@ -173,7 +174,7 @@ export class Game {
     this._bankShards(BALANCE.shardPerSecond * this.stats.shardMult * dt);
 
     // level clears once every mote of this level has been vacuumed AND dumped
-    if (this._cleared >= this._levelDirtTotal) {
+    if (this._cleared >= this.dust.spawned) {
       this._levelClear();
       return;
     }
@@ -181,7 +182,7 @@ export class Game {
     // HUD
     UI.setHud({
       dust: this.stats.dust,
-      dirt: this.dust.count, dirtTotal: this._levelDirtTotal,
+      dirt: this.dust.count, dirtTotal: this.dust.spawned,
       level: this.level, themeIcon: this._def.theme.icon,
       bin: this.bot.bin, binMax: this.stats.binMax,
       time: this.time,
