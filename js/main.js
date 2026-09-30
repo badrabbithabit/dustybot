@@ -1,7 +1,7 @@
 // main.js — bootstrap: save/load, offline calc, main loop, UI wiring.
 import { World } from './world.js';
 import { Game } from './game.js';
-import { BALANCE, offlineGain as computeOffline } from './upgrades.js';
+import { BALANCE, offlineGrant, semverNewer } from './upgrades.js';
 import * as UI from './ui.js';
 import { renderHelp } from './help.js';
 import * as Audio from './audio.js';
@@ -19,7 +19,9 @@ async function checkForUpdate() {
     const res = await fetch('./version.json', { cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
-    if (data.version && data.version !== VERSION) {
+    // Only offer a reload when the server is genuinely NEWER — a rollback
+    // (server version behind this bundle) must not prompt a pointless reload.
+    if (data.version && semverNewer(data.version, VERSION)) {
       UI.showUpdateBanner(data.version);
     }
   } catch { /* offline or file:// — stay silent */ }
@@ -61,12 +63,16 @@ const canvas = document.getElementById('game');
 const world = new World(canvas);
 const save = loadSave();
 
-const rawOffline = save.meta.meta_ap ? computeOffline(save) : 0; // Auto-Pilot gates the trickle
-// Shards are granted offline only as whole numbers — drop the fraction.
-const offlineGain = Math.floor(rawOffline);
-if (offlineGain > 0) {
-  save.shards += offlineGain;
-  save._offlineGain = offlineGain;
+// Auto-Pilot gates the trickle. >=60s absence only; the sub-shard remainder is
+// carried in save._offFrac (part of the save blob, on purpose) so a quick
+// reload can neither drop it nor re-grant the same partial shard forever.
+if (save.meta.meta_ap) {
+  const grant = offlineGrant(save);
+  save._offFrac = grant.frac;
+  if (grant.whole > 0) {
+    save.shards += grant.whole;
+    save._offlineGain = grant.whole; // transient toast field, cleared by game.js
+  }
 }
 
 const game = new Game(world, save);

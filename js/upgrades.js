@@ -320,14 +320,40 @@ export function metaCost(id, lvl) {
 // Shards gained while the game was closed: scales with Shard Polisher + best
 // level cleared, capped at BALANCE.offline.capHours away. Gated on meta_ap
 // (Auto-Pilot Sensor) — that check lives in main.js; this is the pure math.
-export function offlineGain(save) {
+export function offlineGain(save, now = Date.now()) {
   const o = BALANCE.offline;
-  const hours = Math.min(o.capHours, Math.max(0, (Date.now() - save.lastSeen) / 3600_000));
+  const hours = Math.min(o.capHours, Math.max(0, (now - save.lastSeen) / 3600_000));
   if (hours <= 0) return 0;
   const polish = (save.meta && save.meta.meta_polish) || 0;
   const best = Math.max(1, save.bestLevel || 0);
   const rate = o.basePerHour * (1 + o.polishPerHour * polish) * (1 + o.levelPerHour * (best - 1));
   return hours * rate;
+}
+
+// Turn the raw offline accrual into a grant: only absences of >= 60s count, and
+// the sub-shard remainder is carried in save._offFrac (persisted) instead of
+// being dropped on every load. Returns { whole, frac } — caller adds `whole`
+// to shards and stores `frac` back on the save.
+export function offlineGrant(save, now = Date.now()) {
+  const elapsedMs = now - (save.lastSeen || now);
+  if (elapsedMs < 60_000) return { whole: 0, frac: save._offFrac || 0 };
+  const raw = offlineGain(save, now);
+  const carry = (save._offFrac || 0) + (raw - Math.floor(raw));
+  const whole = Math.floor(raw) + Math.floor(carry);
+  const frac = carry - Math.floor(carry);
+  return { whole, frac };
+}
+
+// Dotted version triples compared numerically (missing part = 0): true if a is
+// strictly newer than b. Used so a server *rollback* never prompts a reload.
+export function semverNewer(a, b) {
+  const parts = v => String(v).split('.').map(n => parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) {
+    const p = x[i] || 0, q = y[i] || 0;
+    if (p !== q) return p > q;
+  }
+  return false;
 }
 
 // Shards/hr while the hangar screen is open with the auto-bay built.

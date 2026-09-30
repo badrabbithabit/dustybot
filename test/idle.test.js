@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BALANCE, offlineGain, hangarRate, levelDef } from '../js/upgrades.js';
+import { BALANCE, offlineGain, offlineGrant, semverNewer, hangarRate, levelDef } from '../js/upgrades.js';
 
 test('offlineGain: zero before/after short absence, caps at capHours', () => {
   const base = { lastSeen: Date.now(), meta: {}, bestLevel: 1 };
@@ -30,6 +30,47 @@ test('offlineGain: scales with polish + best level, floor at level 1', () => {
   assert.ok(Math.abs(sL / s0 - 2.2) < 1e-9, 'bestLevel 11 = 1 + .12*10 = x2.2');
   // formula spot-check
   assert.ok(Math.abs(s0 - 3 * BALANCE.offline.basePerHour) < 1e-9);
+});
+
+test('offlineGrant: nothing under the 60s gate, no matter how many loads', () => {
+  const now = 1_700_000_000_000;
+  const s = { lastSeen: now - 30_000, meta: { meta_ap: 1 }, bestLevel: 1 };
+  for (let i = 0; i < 5; i++) {
+    const g = offlineGrant(s, now);
+    assert.equal(g.whole, 0, '30s away never grants');
+    assert.equal(g.frac, 0, 'and never accumulates a fraction');
+  }
+});
+
+test('offlineGrant: whole shards granted, fraction carried across absences', () => {
+  // 1.2 shards/hr (meta_ap only, bestLevel 1); 70 min away -> raw 1.4 each time.
+  const now = 1_700_000_000_000;
+  const away = 4_200_000; // 70 min
+  const s = { lastSeen: now - away, meta: { meta_ap: 1 }, bestLevel: 1 };
+  const g1 = offlineGrant(s, now);
+  assert.equal(g1.whole, 1, 'raw 1.4 -> grant 1');
+  assert.ok(Math.abs(g1.frac - 0.4) < 1e-9, '0.4 carried');
+  // second absence: raw 1.4 + carried 0.4 = 1.8 -> grant 1, carry 0.8
+  s._offFrac = g1.frac;
+  s.lastSeen = now; // the previous absence ended "now"
+  const g2 = offlineGrant(s, now + away);
+  assert.equal(g2.whole, 1, 'raw 1.4 + 0.4 carry -> grant 1');
+  assert.ok(Math.abs(g2.frac - 0.8) < 1e-9, '0.8 carried on');
+  // third absence: raw 1.4 + carried 0.8 = 2.2 -> grant 2
+  s._offFrac = g2.frac;
+  s.lastSeen = now + away;
+  const g3 = offlineGrant(s, now + 2 * away);
+  assert.equal(g3.whole, 2, 'the carried fraction eventually pays out');
+  assert.ok(Math.abs(g3.frac - 0.2) < 1e-9, '0.2 left over');
+});
+
+test('semverNewer: strict numeric triple compare (rollbacks are not newer)', () => {
+  assert.ok(semverNewer('1.2.0', '1.1.3'));
+  assert.ok(!semverNewer('1.1.3', '1.1.3'), 'same version is not newer');
+  assert.ok(semverNewer('1.10.0', '1.9.9'), 'numeric, not lexical');
+  assert.ok(semverNewer('2.0.0', '1.99.99'));
+  assert.ok(!semverNewer('1.0.0', '1.1.3'), 'a rollback must not prompt a reload');
+  assert.ok(semverNewer('1.2', '1.1.9'), 'missing parts count as 0');
 });
 
 test('hangarRate: 0 without the bay, x1/x2/x4 by level, scales with best level', () => {
