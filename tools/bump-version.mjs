@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// Bump the app version in all three places at once:
+// Bump the app version in all four places at once:
 //   js/version.js  — VERSION constant (the bundled build's own version)
 //   version.json   — server truth, fetched no-store on every load
 //   index.html     — ?v= cache-busters on the css/script tags
+//   package.json   — npm metadata (kept in sync for release hygiene)
 //
 // Usage:
 //   node tools/bump-version.mjs            # patch bump: 1.1.0 -> 1.1.1
 //   node tools/bump-version.mjs 2.0.0      # explicit next version
 //
-// Then commit the three files; the GitHub Pages deploy does the rest.
+// Then commit the four files; the GitHub Pages deploy does the rest.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,4 +41,5 @@ console.log(`bumping ${current} -> ${next}`);
 write('js/version.js', read('js/version.js').replace(`VERSION = '${current}'`, `VERSION = '${next}'`));
 write('version.json', read('version.json').replace(/"version"\s*:\s*"[^"]+"/, `"version": "${next}"`));
 write('index.html', read('index.html').split(`?v=${current}`).join(`?v=${next}`));
-console.log('done — commit js/version.js, version.json, index.html and push');
+write('package.json', read('package.json').replace(/"version"\s*:\s*"[^"]+"/, `"version": "${next}"`));
+console.log('done — commit js/version.js, version.json, index.html, package.json and push');
