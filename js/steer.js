@@ -154,7 +154,12 @@ export function steer(bot, world, target, ai, r = R) {
     a = best || bestSlide || a; // no free direction: hold (back-up handles it)
   }
 
+  // Input convention (see bot.js): world direction, +y = DOWN (same as the
+  // joystick/tap inputs). a is the world-space angle to the aim point, so
+  // the y component is +sin(a). (Was -sin(a) — a mirror-across-horizontal
+  // regression introduced when bot.js switched to atan2(ix, -iy) in 3f54d44;
+  // it made the hangar auto-bay bot drive away from motes.)
   input.x = Math.cos(a);
-  input.y = -Math.sin(a);
+  input.y = Math.sin(a);
   return { input, d };
 }
