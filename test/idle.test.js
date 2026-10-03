@@ -98,28 +98,31 @@ test('levelDef: heavy-mote gears climb per rotation and cap', () => {
   assert.equal(levelDef(12).gearUp, false, '12th level is not a gear-up (gear at rotation boundary)');
 });
 
-test('levelDef: new dirt types appear at their gear boundaries', () => {
+test('levelDef: new dirt types appear at their gear boundaries, surged at gear start', () => {
+  const surge = n => Math.max(0, 1 - ((n - 1) % 12) / 6);
   // gear 1 (lv 1–12): no new dirt yet
   assert.equal(levelDef(5).staticShare, 0);
   assert.equal(levelDef(5).tarShare, 0);
   assert.equal(levelDef(5).puffShare, 0);
-  // gear 2 (lv 13–24): static 5%
-  assert.equal(levelDef(13).staticShare, 0.05);
+  // gear 2 (lv 13–24): static 5% steady, but SURGED at the gear start
+  // (the "work hard" spike, settling mid-gear as the build answers it)
+  assert.equal(levelDef(13).staticShare, 0.05 + BALANCE.dirt.staticSurge);
+  assert.equal(levelDef(19).staticShare, 0.05, 'surge settles by mid-gear');
   assert.equal(levelDef(24).staticShare, 0.05);
   assert.equal(levelDef(13).tarShare, 0);
   assert.equal(levelDef(13).puffShare, 0);
-  // gear 3 (lv 25–36): static 8%, tar 5%
-  assert.equal(levelDef(25).staticShare, 0.08);
-  assert.equal(levelDef(25).tarShare, 0.05);
+  // gear 3 (lv 25–36): static 8%, tar 5% (+surge at the gear start)
+  assert.equal(levelDef(25).staticShare, 0.08 + BALANCE.dirt.staticSurge);
+  assert.equal(levelDef(25).tarShare, 0.05 + BALANCE.dirt.tarSurge);
   assert.equal(levelDef(36).tarShare, 0.05);
   assert.equal(levelDef(25).puffShare, 0);
-  // gear 4 (lv 37+): all three, capped for good
-  assert.equal(levelDef(37).staticShare, 0.10);
-  assert.equal(levelDef(37).tarShare, 0.06);
-  assert.equal(levelDef(37).puffShare, 0.06);
-  assert.equal(levelDef(100).staticShare, 0.10);
-  assert.equal(levelDef(100).tarShare, 0.06);
-  assert.equal(levelDef(100).puffShare, 0.06);
+  // gear 4 (lv 37+): all three, capped for good (surge still rides each gear start)
+  assert.equal(levelDef(37).staticShare, 0.10 + BALANCE.dirt.staticSurge);
+  assert.equal(levelDef(37).tarShare, 0.06 + BALANCE.dirt.tarSurge);
+  assert.equal(levelDef(37).puffShare, 0.06 + BALANCE.dirt.puffSurge);
+  assert.equal(levelDef(100).staticShare, 0.10 + surge(100) * BALANCE.dirt.staticSurge);
+  assert.equal(levelDef(100).tarShare, 0.06 + surge(100) * BALANCE.dirt.tarSurge);
+  assert.equal(levelDef(100).puffShare, 0.06 + surge(100) * BALANCE.dirt.puffSurge);
   // the gear-up intro names the newcomer (only on the boundary level)
   assert.equal(levelDef(13).newDirt.length, 1, 'lv13 intro names static');
   assert.equal(levelDef(25).newDirt.length, 1, 'lv25 intro names tar');

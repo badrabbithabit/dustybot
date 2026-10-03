@@ -38,19 +38,25 @@ plus idle/offline trickle channels (gated behind meta unlocks).
   off, and speed is ÷1.25 (`BALANCE.bin.clogWeightMult`). The side brushes
   and magnet still push motes around, so a clogged bot can still finish a
   level — slowly. Drive over the **dock** (glowing ring, top-center) to dump.
-- **Difficulty ramp:** dirt count per level — knee+taper+cap: `raw = 44 +
-  5*(level-1) + 10*rot`; if `raw > 150`: `150 + (raw-150)*0.35`, capped at
-  300; themes cycle residential → office → store → space, 3 rooms each;
-  one difficulty "gear" per full rotation (12 levels, `gearUp` banner).
+- **Difficulty ramp (sawtooth):** the run is a pressure cycle — build to
+  slightly-overpowered by each gear's end, then a hard spike at the next gear
+  start (“work hard”), repeat. Dirt count: gentle within-gear ramp + hard jump
+  per rotation: `ramp = 4*(level-1)`; if `ramp > 120`: `120 + (ramp-120)*0.3`;
+  `dirt = min(300, 44 + rampEff + 26*rot)`. Heavy-mote share jumps `+5%` per
+  gear. New dirt types SURGE at the gear start (first ~6 levels, e.g. static
+  enters at 12% then settles to 5%). Shape measured by `tools/sim-run-curve.mjs`.
+  Themes cycle residential → office → store → space, 3 rooms each;
+  one difficulty “gear” per full rotation (12 levels, `gearUp` banner).
 
 ### Dust economy
 - Mote types (spawn roll, `dust.js`): **dust** = 1 (common), **debris** = 2,
   **puff** = 2, **big** = 3, **static** = 3, **tar** = 4, **gold** = 5
   (chance `3% + Gold/Lucky Bristles`, clamped ≤ 0.5).
-- Heavy-mote share (big+debris) climbs `26% + 2%/rotation`, cap 55%.
-- New dirt types, hard-introduced per gear (shares of the roll, capped at
-  10/6/6%): ⚡ **static** (lv 13+, repels suction — brush/mop counters),
-  🟫 **tar** (lv 25+, mass 3.0, oozes at 0.15 u/s), ☁️ **puff** (lv 37+,
+- Heavy-mote share (big+debris) climbs `26% + 5%/rotation`, cap 55%.
+- New dirt types, hard-introduced per gear (steady shares of the roll, capped
+  at 10/6/6%; each also gets a gear-start SURGE of +7/+6/+5% decaying over the
+  first ~6 levels of every gear): ⚡ **static** (lv 13+, repels suction — brush/mop
+  counters), 🟫 **tar** (lv 25+, mass 3.0, oozes at 0.15 u/s), ☁️ **puff** (lv 37+,
   splits into 3 dust motes when vacuumed). Behaviors live in `dust.js`.
 - Every mote collected banks `value * 0.05 * shardMult` ✦ (fractional parts
   accumulate in an accumulator; whole shards go to the save instantly).
@@ -177,7 +183,7 @@ Per mote, per frame (`dust.js`):
 - Level n: `rot = floor((n-1)/12)`, theme = `floor((n-1)/3) % 4`. The
   archetype is chosen by shuffling with a deterministic key from
   `(runSeed, level)`, retrying placement up to 60 times. Obstacle count
-  ramps `3 + rot`, capped at 5.
+  ramps `3 + rot`, capped at 6.
 - **Deterministic per seed.** `levelDef(level, runSeed = 0)` →
   `generateLevel(themeKey, level, runSeed)` with a mulberry32 RNG. The game
   rolls a fresh 32-bit `runSeed` per run; tests & the balance sim use

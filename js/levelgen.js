@@ -21,7 +21,9 @@ export const GEN = {
   WALL: 1.5,                        // hard in-bounds margin (wall-hugging pieces)
   WALK: 4.0,                        // min walkable corridor from a wall for pieces the
                                     // bot must thread past; matches the old open rooms
-  TARGET_MAX: 5,                    // cap: old handcrafted rooms held 3-5 pieces
+  TARGET_MAX: 6,                    // cap: old handcrafted rooms held 3-5 pieces;
+                                    // late gears add a 6th piece (see generateLevel
+                                    // target = 3 + rot) for gear-start travel pressure
   // Min corridor between obstacles. Must stay >= 2*BOT_R + one 1u flood-fill
   // cell so a gap actually has a walkable cell center (the flood fill blocks
   // cells within BOT_R of any edge); 4u matches the old handcrafted rooms

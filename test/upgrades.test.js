@@ -46,7 +46,8 @@ test('applyPick: full strength in base tier, diminishing past it', () => {
   let expSuction = 1.0;
   for (let i = 0; i < 5; i++) expSuction *= 1.2;
   assert.equal(s.suction, expSuction);
-  assert.equal(s.suctionRange, 2.6 + 0.5 * 5);
+  assert.equal(s.suctionRange, BALANCE.runClamp.suctionRange,
+    '5 full suction picks now hit the tightened range clamp (suckR <= 15)');
   assert.equal(s.binMax, 100 + 5 * 5);
   // 6th pick still works, but at a diminished rate
   const s0 = s.suction, r0 = s.suctionRange, b0 = s.binMax;
@@ -54,6 +55,16 @@ test('applyPick: full strength in base tier, diminishing past it', () => {
   assert.ok(s.suction > s0, 'suction still increases');
   assert.ok(s.suction < s0 * 1.2, 'but at a diminished rate');
   assert.equal(applyPick(s, 'nope'), false, 'unknown id is a no-op');
+});
+
+test('motor clamp: Heavy Motor growth caps at runClamp.motor, bot base immunity survives', () => {
+  const r = fresh('roomba');
+  for (let i = 0; i < 12; i++) applyPick(r, 'traction');
+  assert.ok(r.motor <= BALANCE.runClamp.motor + 1e-9,
+    'unlimited traction picks cannot snowball motor past the clamp (heavy dust stays scary)');
+  const z = fresh('zippy');
+  for (let i = 0; i < 12; i++) applyPick(z, 'traction');
+  assert.equal(z.motor, 99, 'ZIP hover-seal drag-immunity (base motor 99) is never clamped down');
 });
 
 test('Turbo Brush: side brush is an upgrade path (bots start brushless)', () => {

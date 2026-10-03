@@ -461,3 +461,50 @@ artifacts (§1), not gameplay.
 
 Test updates: `test/upgrades.test.js` (two `3.4` base assertions → `2.6`),
 `test/levelgen.test.js` (hardcoded `26` → `BALANCE.dirt.base`). `npm test` → 21/21.
+
+## 13. Leveling shape: sawtooth "build → slightly-OP → work hard → repeat" (2026-10-02)
+
+Playtest ask: the run should cycle — build to *slightly overpowered*, then a
+*work hard* stretch, then repeat. New measurement tool: **`tools/sim-run-curve.mjs`**
+plays a *sequential* run (stats carry, a human-like pick from the real
+`rollPicks()` after each clear) and reports seconds-per-mote per level plus a
+gear-shape summary.
+
+**Before (roomba, 3 seeds):** pressure fell 68% inside gear 0 and then the
+cycle died — every gear *started easier* than the last ended (gear-1 spike
+−17%, gear-4 −2%), and L37+ was a flat power-fantasy grind (~0.08 s/mote,
+~17 s clears at 200 motes). Causes: (1) difficulty ramped only *quantitatively*
+(+5 dirt/level, +10/rotation, heavy +2%/rot) while power got one full-strength
+pick per level through ~L41; (2) `runClamp.suctionRange 7.0` let suckR reach
+**21 = half the arena** (autofetch); (3) unlimited picks snowballed `motor` to
+~50, nullifying the heavy-dust mechanic entirely.
+
+**Changes (all in `BALANCE` / `levelDef`):**
+- Dirt count is now a **sawtooth**: gentle within-gear ramp `+4/level` (knee
+  120 on the *ramp part only*, taper 0.3) + a hard `+26` jump at each gear
+  start (~+30% dirt at L13/L25/L37/L49).
+- Heavy-mote share jumps `+5%` per gear (was +2%).
+- New dirt types get a **gear-start surge**: the newest hazard enters at
+  +7/+6/+5% share for the first ~6 levels of every gear, settling to its
+  steady share — the behavioral "work hard" spike, then adaptation.
+- `runClamp`: `suctionRange 7.0 → 5.0` (suckR ≤ 15), `pickupRadius 4.5 → 3.5`,
+  new `motor: 8.0` capping *growth only* (ZIP's 99 drag-immunity untouched —
+  regression-tested).
+- `levelgen TARGET_MAX 5 → 6` (target `3+rot`): late gears add a 6th piece
+  for travel pressure. 24 000-layout sweep: 0 invalid, 0 fallback, avg 4.93.
+
+**After (roomba, 3 seeds):** gear-start pressure spikes vs previous gear end:
+gear 2 **+413%** (tar surge; one seed took 300 s at L25), gear 3 **+35%**,
+gear 4 flat in the sim (AI is clamp-saturated by L48; the human "work hard"
+there is the hazard surge + 46% heavy, which the skip-based AI under-feels —
+it still produced a 117 s struggle at L51). Within-gear overtake stays 25–86%
+(the "slightly-OP by gear end" half, which already worked). SUDS run: same
+shape, milder late spikes — the mop's identity answering the surges.
+
+§11/§12 base/mid/maxed tables shift up slightly (denser late levels): base
+per-level roomba L1 38 → L52 102 s; maxed 18.7–31.2 s mean; matrix stays
+healthy (fails are the known detour-AI oscillation).
+
+Test updates: `test/idle.test.js` (gear-boundary shares now include the
+surge), `test/upgrades.test.js` (suctionRange clamp 5.0; new motor-clamp
+regression test incl. ZIP 99). `node --test test/*.test.js` → 48/48.

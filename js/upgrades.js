@@ -17,20 +17,33 @@ export const BALANCE = {
     moteValue: 1,                   // base value of a common mote
     goldChance: 0.03,               // chance a spawned mote is the bonus type
     base: 44,                       // dirt count at level 1 (per IDLE_PLAN: denser start)
-    perLevel: 5,                    // + dirt per level (scales with level number)
-    perRotation: 10,                // + dirt per full theme rotation (extra ramp)
-    // Dirt count: linear ramp up to `knee`, then a gentler taper so endless
-    // floors keep getting busier (just slower) without a hard wall.
-    knee: 150,                      // dirt count where the ramp eases off
-    taper: 0.35,                    // growth multiplier past the knee
+    // Difficulty is a SAWTOOTH per gear (12-level theme rotation): a hard jump
+    // at the gear start ("work hard"), then a gentle within-gear ramp the
+    // player's upgrade picks overtake by the gear end ("slightly overpowered"),
+    // then the next gear's jump resets the pressure. Measured with
+    // tools/sim-run-curve.mjs — the old linear ramp (+5/lvl, +10/rot) let
+    // power outrun difficulty from L13 on (every gear started EASIER than the
+    // last one ended, and L37+ was a flat power-fantasy grind).
+    perLevel: 4,                    // + dirt per level (gentle within-gear ramp)
+    perRotation: 26,                // + dirt at each gear start (the spike, ~+30%)
+    // The within-gear ramp eases off at `knee` (applied to the ramp part ONLY,
+    // so the per-gear spike survives into late game), then the total hits dirtCap.
+    knee: 120,                      // ramp units where the ramp eases off
+    taper: 0.3,                     // growth multiplier past the knee
     dirtCap: 300,                   // hard ceiling (below MAX_DUST=400)
-    heavyStep: 0.02,                // + heavy-mote share per rotation (difficulty gears)
+    heavyStep: 0.05,                // + heavy-mote share per rotation (difficulty gears)
     heavyCap: 0.55,                 // max share of big+debris motes at high levels
     // New dirt types, HARD-INTRODUCED per gear (index = rotation, capped at 3).
     // Each is a new *behavior*, not just more weight (see dust.js).
     staticShares: [0, 0.05, 0.08, 0.10],   // repels suction; brush/mop are the counters
     tarShares:    [0, 0, 0.05, 0.06],      // super-heavy, oozes; drivetrain/mop answer it
     puffShares:   [0, 0, 0, 0.06],         // splits into 3 motes on pickup
+    // Gear-start SURGE on top of the steady share: the newest hazard enters at
+    // full force for the first ~4 levels of its gear (the "work hard" spike),
+    // then settles to its steady share while the player adapts (see levelDef).
+    staticSurge: 0.07,
+    tarSurge:    0.06,
+    puffSurge:   0.05,
     tarSpeed: 0.15,                       // tar ooze speed (u/s)
   },
   shardPerDust: 0.05,
@@ -65,11 +78,17 @@ export const BALANCE = {
   // bounds so a 200-level run can't make the vacuum bigger than the room.
   runClamp: {
     suction: 3.0,         // max run suction (keeps suckR sane)
-    suctionRange: 7.0,    // max suction range (suckR ~21; arena is 44)
-    pickupRadius: 4.5,    // max pickup radius
+    suctionRange: 5.0,    // max suction range (suckR <= 15; arena is 44 — the
+                          // old 7.0 let suckR reach 21 = half the arena, which
+                          // made late runs autofetch the whole room)
+    pickupRadius: 3.5,    // max pickup radius
     magnetRange: 10.0,    // max magnet pull distance
     speed: 12.0,          // max move speed
     goldChance: 0.5,      // max golden-dust probability
+    motor: 8.0,           // max GROWTH from Heavy Motor picks (unlimited picks
+                          // used to snowball motor to ~50 and nullify the whole
+                          // heavy-dust mechanic). Bots whose BASE motor already
+                          // exceeds it (ZIP's 99 drag-immunity) are untouched.
   },
   gearEvery: 12,                    // one difficulty "gear" = one theme rotation (12 levels)
   shardPerLevelPerLevel: 0.05,      // level-clear shards: base + this * (level-1)
@@ -272,6 +291,10 @@ function clampRunStats(s) {
   s.magnetRange = Math.min(C.magnetRange, s.magnetRange);
   s.speed = Math.min(C.speed, s.speed);
   s.goldChance = Math.min(C.goldChance, s.goldChance);
+  // Motor: cap the *growth* at runClamp.motor, never a bot's base (ZIP's 99 =
+  // drag-immunity identity stays intact).
+  const baseMotor = (BOTS[s.bot] && BOTS[s.bot].motor) || 1;
+  s.motor = Math.min(Math.max(C.motor, baseMotor), s.motor);
 }
 
 export function runLevels(s) {
@@ -430,22 +453,27 @@ export function levelDef(level, runSeed = 0) {
   const theme = THEMES[themeKey];
   const room = generateLevel(themeKey, level, runSeed);
   const obstacles = room.obstacles.map(o => ({ ...o }));
-  // Dirt count: linear ramp to knee, then gentler taper, up to dirtCap.
-  const rawDirt = BALANCE.dirt.base + (level - 1) * BALANCE.dirt.perLevel + rot * BALANCE.dirt.perRotation;
+  // Dirt count: SAWTOOTH — gentle within-gear ramp (tapered past the knee)
+  // plus a hard jump at each gear start, up to dirtCap.
+  const ramp = (level - 1) * BALANCE.dirt.perLevel;
+  const rampEff = ramp <= BALANCE.dirt.knee
+    ? ramp
+    : BALANCE.dirt.knee + (ramp - BALANCE.dirt.knee) * BALANCE.dirt.taper;
   const dirtCount = Math.round(Math.min(BALANCE.dirt.dirtCap,
-    rawDirt <= BALANCE.dirt.knee
-      ? rawDirt
-      : BALANCE.dirt.knee + (rawDirt - BALANCE.dirt.knee) * BALANCE.dirt.taper));
+    BALANCE.dirt.base + rampEff + rot * BALANCE.dirt.perRotation));
   // Heavy-mote share (big + debris) climbs one "gear" per rotation: late
   // levels demand mopper / heavy-motor builds instead of just grinding.
   const heavyShare = Math.min(BALANCE.dirt.heavyCap, 0.26 + rot * BALANCE.dirt.heavyStep);
   const bigShare = heavyShare * 0.55;
   const debrisShare = heavyShare - bigShare;
-  // New dirt types: one new behavior per gear boundary (see BALANCE.dirt shares).
+  // New dirt types: one new behavior per gear boundary (see BALANCE.dirt shares),
+  // SURGED at the gear start (first ~4 levels) so each new hazard is a "work
+  // hard" spike that settles as the player's build answers it.
   const g = Math.min(3, rot);
-  const staticShare = BALANCE.dirt.staticShares[g];
-  const tarShare = BALANCE.dirt.tarShares[g];
-  const puffShare = BALANCE.dirt.puffShares[g];
+  const surge = Math.max(0, 1 - (pos % BALANCE.gearEvery) / 6);
+  const staticShare = BALANCE.dirt.staticShares[g] + (g >= 1 ? surge * BALANCE.dirt.staticSurge : 0);
+  const tarShare = BALANCE.dirt.tarShares[g] + (g >= 2 ? surge * BALANCE.dirt.tarSurge : 0);
+  const puffShare = BALANCE.dirt.puffShares[g] + (g >= 3 ? surge * BALANCE.dirt.puffSurge : 0);
   const newDirt = [];
   if (level === 13) newDirt.push('⚡ STATIC — repels suction. Brush it in or mow it down first.');
   if (level === 25) newDirt.push('🟫 TAR — super-heavy, and it keeps creeping. Motor power wins.');
