@@ -12,7 +12,7 @@
 <title>Dusty Bot — 2D Vacuum Roguelike</title>
 </head>
 <body>
-<canvas id="game"></canvas>
+<canvas id="game" aria-label="Dusty Bot game canvas" role="img"></canvas>
 
 <!-- HUD -->
 <div id="hud" class="hidden">
@@ -102,7 +102,7 @@
   <button id="btn-help-back" class="big small">BACK</button>
 </div>
 
-<!-- Upgrade pick (level up) — compact panel, game keeps running behind it -->
+<!-- Upgrade pick (level up) — compact panel, game pauses behind it -->
 <div id="pick-panel" class="hidden">
   <h2 id="pick-title">LEVEL CLEAR</h2>
   <p id="pick-sub">pick an upgrade</p>
@@ -119,3 +119,5 @@
 </body>
 <script type="module" src="./js/main.js?v=1.1.4"></script>
 </html>
+
+

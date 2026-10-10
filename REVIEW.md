@@ -73,11 +73,11 @@ Remaining: P2 orphan removal, P3 docs, P4 manual playtest, P5 polish.
   (gold = 2) in `game._onCollect`.
 - [x] **9.** Offline toast re-appeared on every menu visit — ✅ FIXED: `toMenu` reads
   `_offlineGain` once and resets it to 0 before `setMenu`.
-- [ ] **10.** Pick state freezes the game (`game.update` returns early on `state !== 'run'`),
+- [x] **10.** Pick state freezes the game (`game.update` returns early on `state !== 'run'`),
   but `index.html` comment says "game keeps running behind" — pick one and document it.
-- [ ] **11.** `dust.spawnLevel(count, theme)` signature: `theme` param name is misleading —
+- [x] **11.** `dust.spawnLevel(count, theme)` signature: `theme` param name is misleading —
   it's the full theme object; fine, but consider `(count, theme, stats)` after fix #7.
-- [ ] **12.** `index.html` viewport: `user-scalable=no` + tiny 6–8px Press Start 2P text hurts
+- [x] **12.** `index.html` viewport: `user-scalable=no` + tiny 6–8px Press Start 2P text hurts
   readability/accessibility. Intentional? Add `aria-label` to `#game` canvas.
 
 ## P2 — Orphaned code (remove or deliberately revive)
@@ -204,3 +204,4 @@ Supersedes the fixed-`LAYOUTS` approach described above (P3/P5 referenced the ol
   all three bots.
 - 2400-level sweep: 0 invalid, 0 fallbacks, avg 4.91 obstacles (old rooms were 3–5).
 - Full unit suite: 21/21 pass (`npm test`).
+
