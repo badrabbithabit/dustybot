@@ -3,7 +3,7 @@
 // Run: npm test   (or: node --test test/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const read = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 
@@ -27,4 +27,17 @@ test('index.html cache-busters match js/version.js (css + script)', () => {
 
 test('package.json matches js/version.js', () => {
   assert.equal(vPkg, vJs);
+});
+
+// Wall-clock assertions are the reason the Pages deploy failed once: a 1 ms
+// tick between two Date.now() calls blows a 1e-9 tolerance on CI but not locally.
+// Pure functions take `now` — pass a fixed timestamp instead.
+test('unit tests use fixed clocks (no Date.now in assertions)', () => {
+  const dir = new URL('../test/', import.meta.url);
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.test.js') || f === 'version.test.js') continue;
+    const src = readFileSync(new URL(f, dir), 'utf8')
+      .split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+    assert.ok(!src.includes('Date.now()'), `${f} uses Date.now() — pass an explicit now`);
+  }
 });

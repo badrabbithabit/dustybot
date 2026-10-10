@@ -5,28 +5,33 @@ import assert from 'node:assert/strict';
 
 import { BALANCE, offlineGain, offlineGrant, semverNewer, hangarRate, levelDef } from '../js/upgrades.js';
 
+// Fixed clock: offlineGain(save, now) takes `now`, so never rely on Date.now()
+// here — the wall clock ticking between the two Date.now() calls made the 1e-9
+// tolerances flaky (it failed on CI, passed locally).
 test('offlineGain: zero before/after short absence, caps at capHours', () => {
-  const base = { lastSeen: Date.now(), meta: {}, bestLevel: 1 };
+  const now = 1_700_000_000_000;
+  const base = { lastSeen: now, meta: {}, bestLevel: 1 };
   // Proportional accrual (main.js filters out sub-1-shard displays).
   const o = BALANCE.offline;
-  const oneMin = offlineGain({ ...base, lastSeen: Date.now() - 60_000 });
+  const oneMin = offlineGain({ ...base, lastSeen: now - 60_000 }, now);
   assert.ok(Math.abs(oneMin - (1 / 60) * o.basePerHour) < 1e-9, '1 min away -> proportional');
-  const far = { ...base, lastSeen: Date.now() - 48 * 3600_000 };
-  assert.ok(offlineGain(far) > 0);
-  const capped = { ...base, lastSeen: Date.now() - 48 * 3600_000 };
-  const maxed = { ...base, lastSeen: Date.now() - 480 * 3600_000 };
-  assert.equal(offlineGain(capped), offlineGain(maxed), '48h and 480h give the same (8h cap)');
+  const far = { ...base, lastSeen: now - 48 * 3600_000 };
+  assert.ok(offlineGain(far, now) > 0);
+  const capped = { ...base, lastSeen: now - 48 * 3600_000 };
+  const maxed = { ...base, lastSeen: now - 480 * 3600_000 };
+  assert.equal(offlineGain(capped, now), offlineGain(maxed, now), '48h and 480h give the same (8h cap)');
 });
 
 test('offlineGain: scales with polish + best level, floor at level 1', () => {
-  const away = Date.now() - 3 * 3600_000;
-  const s0 = offlineGain({ lastSeen: away, meta: {}, bestLevel: 0 });
-  const s1 = offlineGain({ lastSeen: away, meta: {}, bestLevel: 1 });
+  const now = 1_700_000_000_000;
+  const away = now - 3 * 3600_000;
+  const s0 = offlineGain({ lastSeen: away, meta: {}, bestLevel: 0 }, now);
+  const s1 = offlineGain({ lastSeen: away, meta: {}, bestLevel: 1 }, now);
   assert.equal(s0, s1, 'bestLevel 0 behaves like level 1');
-  const sP = offlineGain({ lastSeen: away, meta: { meta_polish: 5 }, bestLevel: 1 });
+  const sP = offlineGain({ lastSeen: away, meta: { meta_polish: 5 }, bestLevel: 1 }, now);
   assert.ok(sP > s0, 'polisher raises the rate');
   assert.ok(Math.abs(sP / s0 - 1.25) < 1e-9, '5 polish levels = +25%');
-  const sL = offlineGain({ lastSeen: away, meta: {}, bestLevel: 11 });
+  const sL = offlineGain({ lastSeen: away, meta: {}, bestLevel: 11 }, now);
   assert.ok(Math.abs(sL / s0 - 2.2) < 1e-9, 'bestLevel 11 = 1 + .12*10 = x2.2');
   // formula spot-check
   assert.ok(Math.abs(s0 - 3 * BALANCE.offline.basePerHour) < 1e-9);
