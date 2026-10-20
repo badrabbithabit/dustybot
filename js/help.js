@@ -33,6 +33,13 @@ export function helpSections() {
         'The Auto-Bay idles in the hangar and keeps collecting while you are away. Deeper runs unlock new bots.',
       ],
     },
+    {
+      title: 'VISITORS',
+      lines: [
+        'People wander the rooms and are solid — furniture to them, wall to you.',
+        'Bump into one and it carries you to a random spot while your bin spills. A Sasquatch shows up about once every ten rooms.',
+      ],
+    },
   ];
 }
 

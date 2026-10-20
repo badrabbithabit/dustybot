@@ -30,6 +30,8 @@ export class World {
     this.ox = 0; this.oy = 0;   // world origin in css px (top-left)
     this.theme = { ...DEFAULT_THEME };
     this.obstacles = [];
+    this.bodies = [];           // moving circular bodies {x,y,r} (visitors) — solid
+    this.shakeT = 0;            // screen-shake timer (Sasquatch drop)
     this._floorCv = null;
     this._floorKey = null;     // raster identity of the cached floor canvas
     this._initWet();           // wet-floor layer (mopping bots)
@@ -191,10 +193,14 @@ export class World {
     return p;
   }
 
-  // Is a point inside any obstacle (with an optional outer padding)?
+  // Is a point inside any obstacle rect or moving body (with optional padding)?
   blocked(x, y, pad = 0) {
     for (const o of this.obstacles) {
       if (x > o.x - pad && x < o.x + o.w + pad && y > o.y - pad && y < o.y + o.h + pad) return true;
+    }
+    for (const b of this.bodies) {
+      const dx = x - b.x, dy = y - b.y, rad = b.r + pad;
+      if (dx * dx + dy * dy < rad * rad) return true;
     }
     return false;
   }
@@ -307,6 +313,15 @@ export class World {
   render(game) {
     const c = this.ctx;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    // Screen shake (Sasquatch drop): offset the whole scene by a random +/-3px
+    // for THIS frame only (ox/oy restored at the end so toWorld / input mapping
+    // stay correct). The timer itself is decayed with dt in game.js.
+    let shx = 0, shy = 0;
+    if (this.shakeT > 0) {
+      shx = Math.random() * 6 - 3;
+      shy = Math.random() * 6 - 3;
+      this.ox += shx; this.oy += shy;
+    }
     const w = window.innerWidth, h = window.innerHeight;
     // letterbox background
     c.fillStyle = PAL.bg;
@@ -331,6 +346,9 @@ export class World {
     // entities
     this._drawDock(c);
     if (game && game.dust) game.dust.draw(c);
+    // Visitors draw after the dirt but BEFORE the bot: a carried bot must
+    // render on top of the hands holding it (VISITORS_PLAN §6).
+    if (game && game.visitors) game.visitors.draw(c);
     if (game && game.bot) game.bot.draw(c);
     // tap marker (blinking)
     if (game && game._tapInput) {
@@ -343,6 +361,7 @@ export class World {
       c.fillStyle = PAL.blueHi;
       c.fillRect(p.x - 2, p.y - 2, 4, 4);
     }
+    if (shx || shy) { this.ox -= shx; this.oy -= shy; }
   }
 
   _drawWalls(c, tl) {

@@ -8,10 +8,10 @@ import assert from 'node:assert/strict';
 
 import { helpSections, helpHtml } from '../js/help.js';
 
-test('helpSections: covers goal, controls, dust, and shards', () => {
+test('helpSections: covers goal, controls, dust, shards, and visitors', () => {
   const sections = helpSections();
   const titles = sections.map(s => s.title);
-  for (const t of ['GOAL', 'CONTROLS', 'DUST', 'SHARDS'])
+  for (const t of ['GOAL', 'CONTROLS', 'DUST', 'SHARDS', 'VISITORS'])
     assert.ok(titles.includes(t), `has a ${t} section`);
   for (const s of sections) {
     assert.ok(s.lines.length >= 1, `${s.title} has at least one line`);
@@ -21,8 +21,9 @@ test('helpSections: covers goal, controls, dust, and shards', () => {
 
 test('helpHtml: renders sections and mentions the key facts', () => {
   const html = helpHtml();
-  for (const t of ['GOAL', 'CONTROLS', 'DUST', 'SHARDS'])
+  for (const t of ['GOAL', 'CONTROLS', 'DUST', 'SHARDS', 'VISITORS'])
     assert.match(html, new RegExp(t), `renders the ${t} title`);
+  assert.match(html, /Sasquatch/, 'warns about the Sasquatch (VISITORS section)');
   assert.match(html, /DOCK/i, 'mentions emptying the bin at the dock');
   assert.match(html, /worth 5/, 'gold value stays in the manual');
   assert.match(html, /HANGAR/i, 'mentions the hangar');

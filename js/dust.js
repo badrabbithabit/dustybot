@@ -101,8 +101,12 @@ export class DustSystem {
     return it;
   }
 
-  // Place one mote at a fixed spot (puff splinters). Skips silently at the pool cap.
-  _spawnPiece(x, y, type, val) {
+  // Place one mote at a fixed spot (puff splinters). Skips silently at the pool
+  // cap. `counts` = does this mote join the level's dirt total? Puff splinters
+  // are NEW motes (counts=true); re-placing a mote that already existed (a
+  // visitor's sticky-foot drop, a carry spill out of the bin) must NOT bump it
+  // (counts=false) — see the conservation law above.
+  _spawnPiece(x, y, type, val, counts = true) {
     if (this.items.length >= MAX_DUST) return null;
     const r = MOTE_R[type] || 0.3;
     if (x < r || y < r || x > this.world.W - r || y > this.world.H - r || this.world.blocked(x, y, r)) return null;
@@ -113,7 +117,45 @@ export class DustSystem {
     it.phase = Math.random() * 6.28;
     it.soaked = false;
     this.items.push(it);
-    this.spawned++;   // splinters count toward the level's dirt total
+    if (counts) this.spawned++;   // only NEW motes raise the level's dirt total
+    return it;
+  }
+
+  // Take the nearest mote within `r` of (x, y) off the floor WITHOUT crediting
+  // it (visitors' sticky feet — see VISITORS_PLAN.md §4).
+  // CONSERVATION LAW (why the numbers below are shaped this way):
+  //     dust.spawned == floor motes + motes stuck to a visitor + bot.bin + game._cleared
+  // Every mote the level ever spawned must end up dumped at the dock, because
+  // the level clears on `_cleared >= dust.spawned`. So a mote that is merely
+  // RELOCATED (takeNear -> drop, or a bin spill) must never change `spawned`,
+  // and a mote removed by takeNear must always be re-placed with drop()
+  // before whatever held it disappears. Break either rule and the level can
+  // never clear (there is no fail state to rescue the run).
+  takeNear(x, y, r) {
+    let best = -1, bd = r * r;
+    for (let i = 0; i < this.items.length; i++) {
+      const it = this.items[i];
+      const dx = it.x - x, dy = it.y - y, d2 = dx * dx + dy * dy;
+      if (d2 <= bd) { bd = d2; best = i; }
+    }
+    if (best < 0) return null;
+    const it = this.items.splice(best, 1)[0];
+    const snap = { x: it.x, y: it.y, type: it.type, val: it.val, r: it.r };
+    this._free.push(it);
+    return snap;
+  }
+
+  // Public place-at-a-spot (the counterpart of takeNear). It RELOCATES an
+  // existing mote, so it does NOT bump this.spawned (see the conservation law).
+  // If the exact spot is blocked / at the pool cap, retry up to 8 times at
+  // jittered offsets within ~1.2u. Returns the mote, or null if none fit —
+  // callers must keep the mote (and retry later) when that happens.
+  drop(x, y, type, val) {
+    let it = this._spawnPiece(x, y, type, val, false);
+    for (let k = 0; !it && k < 8; k++) {
+      const a = Math.random() * 6.283, d = Math.random() * 1.2;
+      it = this._spawnPiece(x + Math.cos(a) * d, y + Math.sin(a) * d, type, val, false);
+    }
     return it;
   }
 

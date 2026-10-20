@@ -61,6 +61,42 @@ export const BALANCE = {
     basePerHour: 0.3,               // shards/hr at bestLevel 1 (scaled by autobay level)
     levelPerHour: 0.1,
   },
+  // Wandering visitors (VISITORS_PLAN.md v1.2.0): people + a rare Sasquatch who
+  // walk through the level, stick motes to their feet, and pick the bot up on
+  // contact. Single source of truth for every visitor number (see that plan for
+  // the schedule, which lives in js/visitors.js).
+  visitors: {
+    humanSpeed: 1.6,                // walk speed u/s (Sasquatch slower, bigger)
+    sasSpeed: 1.4,
+    carrySpeed: 2.6,                // while carrying the bot
+    sasCarrySpeed: 1.9,
+    radius: 1.1,                    // solid body radius (world.bodies)
+    sasRadius: 2.0,
+    footR: 0.55,                    // sticky-feet grab radius around a mote
+    lifeMin: 10, lifeMax: 15,       // per-visitor wander lifetime (s)
+    exitSpeedMult: 1.35,            // speedup while walking out to the edge
+    exitCap: 6,                     // extra seconds allowed to reach the edge
+    trackR: 7,                      // a mote this close becomes the walk target
+    stickyChance: 0.08,             // chance a foot mote sticks (per cooldown)
+    stickyCd: 1.2,
+    carryMax: 2,                    // motes stuck to the feet at a time
+    dropDist: 0.8,                  // travel between foot-drop rolls
+    dropFrac: 0.25,                 // chance a stuck mote falls off
+    dropBack: 2,                    // ...that far behind the visitor
+    carryDist: [8, 14],             // drop-target distance (human)
+    sasCarryDist: [18, 26],
+    carryCap: { human: 5, sas: 9 }, // hard carry duration (s)
+    spillInterval: { human: 1.2, sas: 0.5 },   // bin spill cadence while carried
+    spillCapFrac: { human: 0.4, sas: 0.6 },    // max share of the grab-time bin
+    sasBurst: [2, 4],               // Sasquatch grab: immediate spill burst
+    immunity: { human: 3.5, sas: 5 },          // no re-grab window after a drop
+    avoidR: 2.5,                    // visitor keeps this far off an immune bot
+    midChance: 0.22,                // per-level mid-level human roll
+    midTime: [6, 40],               // spawn time window after `run` starts (s)
+    deferHuman: 10, deferSas: 20,   // defer cap when a visitor is already out
+    minSpawnDistFromBot: 8,         // spawn rejection sampling
+    spawnTries: 60,
+  },
   // Mote mass: heavy motes drag the bot; mopping wets the floor to lighten them.
   moteMass: { dust: 0.05, big: 1.0, gold: 0.6, debris: 1.4, static: 0.25, tar: 3.0, puff: 0.05 },
   drag: {

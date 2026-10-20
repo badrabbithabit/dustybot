@@ -8,6 +8,7 @@ import { BALANCE, makeRunStats, rollPicks, applyPick, levelDef, metaCost as meta
 import { HangarIdle } from './hangar.js';
 import { Bot } from './bot.js';
 import { DustSystem } from './dust.js';
+import { Visitors } from './visitors.js';
 import { Controls } from './controls.js';
 import * as UI from './ui.js';
 import * as Audio from './audio.js';
@@ -20,6 +21,29 @@ export class Game {
     this.save = save;
     this.controls = new Controls(world.canvas);
     this.dust = new DustSystem(world);
+    // Wandering visitors (VISITORS_PLAN.md): people/Sasquatch that walk the
+    // room, are solid, and carry the bot away on contact. The module stays
+    // DOM-free, so the UI (toasts) lives here in game.js.
+    this.visitors = new Visitors(this.world, this.dust);
+    // UI.toast REPLACES the previous toast (ui.js), so a Sasquatch message
+    // could be silently overwritten by a human one in the same frame. While
+    // _sasToastT > 0 (the toast's own 2.2 s lifetime, ticked in update) only
+    // Sasquatch events may toast; human events are dropped.
+    this._sasToastT = 0;
+    this.visitors.onEvent = (ev) => {
+      const sas = ev.kind === 'sasquatch';
+      if (!sas && this._sasToastT > 0) return;
+      if (ev.type === 'spawn') {
+        if (sas) { UI.toast('SASQUATCH!', 'warn'); this._sasToastT = 2.2; }
+        else UI.toast('Someone is wandering through...', '');
+      } else if (ev.type === 'grab') {
+        if (sas) { UI.toast('SASQUATCH! Dust is falling out of you!', 'warn'); this._sasToastT = 2.2; }
+        else UI.toast('A stranger picked you up!', 'warn');
+      } else if (ev.type === 'drop') {
+        UI.toast('Set down. ' + (ev.spilled || 0) + ' motes spilled', 'warn');
+        if (sas) this._sasToastT = 2.2;
+      }
+    };
     this.state = 'menu';
     this.bot = null;
     this.stats = null;
@@ -72,6 +96,8 @@ export class Game {
     this._fullWarned = false;
     this._runSeed = (Math.random() * 4294967296) >>> 0; // fresh layouts each run
     this._cleared = 0;   // dirt dumped from the bin this level (drives level clear)
+    this._sasToastT = 0; // don't let a Sasquatch toast leak into the new run
+    this.visitors.reset();   // no leftovers from the previous run
     this.bot = new Bot(this.world, this.stats);
     this.bot.onBoost = () => {
       Audio.sfx.boost();
@@ -92,6 +118,13 @@ export class Game {
     const def = levelDef(n, this._runSeed);
     this._def = def;   // cache: HUD reads theme from this every frame
     this.world.setLevel(def.theme, def.obstacles, def.themeKey);
+
+    // Visitors: drop last level's visitor (and its world.bodies entry), then
+    // queue this level's scheduled spawns — deterministic in (runSeed, level),
+    // spawned on the first update() after the intro banner (§1/§8).
+    this.visitors.reset();
+    this.visitors.onLevelStart(n, this._runSeed, def.themeKey);
+    this._sasToastT = 0;   // a Sasquatch toast must not swallow the next level's toasts
 
     // bot at a clear spot (every layout keeps the arena center free)
     this.bot.x = this.world.W / 2;
@@ -121,6 +154,7 @@ export class Game {
     }
     if (this.state !== 'run' || !this.bot) return;
     this.time += dt;
+    if (this._sasToastT > 0) this._sasToastT -= dt;   // expire the Sasquatch toast lock
 
     // input
     const j = this.controls.joy;
@@ -131,6 +165,12 @@ export class Game {
     const input = { x: ix, y: iy, boost: this.controls.boost || (kv.active && this.controls.keys[' ']), tap: this._tapInput };
     if (this._tapInput) {
       if (Math.hypot(this.bot.x - this._tapInput.x, this.bot.y - this._tapInput.y) < 0.8) this._tapInput = null;
+    }
+    // A carried bot is helpless (§5): zero the input so the player cannot
+    // steer while the visitor walks them to the drop spot.
+    if (this.visitors.carrying) {
+      this._tapInput = null;
+      input.x = 0; input.y = 0; input.boost = false; input.tap = null;
     }
 
     this.bot.update(dt, input);
@@ -155,11 +195,27 @@ export class Game {
       this._fullWarned = false;
     }
 
+    // visitors update BEFORE the dock check: a grab this frame must lock the
+    // input/dump on the same frame it happens (VISITORS_PLAN §8).
+    this.visitors.update(dt, this.bot, this);
+    // A despawned visitor could occasionally not put a sticky-foot mote back on
+    // the floor (tight corner / pool cap). Credit it, or the level's clear
+    // counter could never catch dust.spawned (dust.js conservation law).
+    if (this.visitors.unplaced) {
+      this._cleared = Math.min(this.dust.spawned, this._cleared + this.visitors.unplaced);
+      this.visitors.unplaced = 0;
+    }
+    // Screen shake decays with real time, not per frame (frame-rate dependent
+    // decay would double at 30 fps — same rule as world.updateWet).
+    if (this.world.shakeT > 0) this.world.shakeT = Math.max(0, this.world.shakeT - dt);
+
     // dock: empty the bin. Dirt only counts as CLEARED once it leaves the bin
     // here, so the level ends when you've dumped everything you vacuumed —
     // not the moment it's sucked up (the bin still holds it).
+    // Skipped while carried: a bot dangling in someone's hands must not dump
+    // itself (the spill during the carry is the whole point).
     const dock = BALANCE.dock;
-    if (this.bot.bin > 0 &&
+    if (!this.visitors.carrying && this.bot.bin > 0 &&
         Math.hypot(this.bot.x - dock.x, this.bot.y - dock.y) < dock.triggerR) {
       const v = this.bot.dumpBin();
       // dust.spawned is the MOVING total: puff splinters add motes after the
@@ -261,6 +317,7 @@ export class Game {
     if (this.state !== 'run' && this.state !== 'intro') return false;
     this._pausedFrom = this.state;
     this.state = 'paused';
+    this.world.shakeT = 0;   // render keeps running while paused: no looping shake
     UI.hide('pick-panel');
     UI.show('screen-pause');
     return true;
@@ -279,6 +336,7 @@ export class Game {
     this.state = 'menu';
     this._screen = 'menu';
     this._pausedFrom = null;
+    this.visitors.reset();   // no visitor bodies left in the (reused) world
     UI.hide('screen-pause'); UI.hide('screen-help');
     // Persist hangar idle stats, then tear the sim down.
     if (this.hangar) {

@@ -75,6 +75,22 @@ plus idle/offline trickle channels (gated behind meta unlocks).
   at a flat `0.3/hr * (1 + 0.1*(bestLevel−1)) * mult` — the sim is a visual,
   the flat rate is the economy.
 
+### Wandering visitors
+
+People (and a rare Sasquatch) walk through levels (`js/visitors.js`, full
+contract in `VISITORS_PLAN.md`; numbers in `BALANCE.visitors`). Schedule is
+deterministic in `(runSeed, level)`: **one human per 3-level theme block** at
+a randomly rolled level start; **one Sasquatch per 10-level window**, always
+mid-level; plus a **22%** mid-level human roll per level (skipped when the
+Sasquatch owns that level). Visitors live **10–15 s**, wander toward nearby
+motes, then walk out an edge. They are **solid** (`world.bodies`), never
+enter the dock strip, and their **sticky feet** relocate motes (take + re-drop
+— `dust.spawned` never counts relocated motes, so the level-clear counter stays reachable — VISITORS_PLAN.md §4). Bumping one = it
+carries the bot (input locked, dock dump skipped) to a random free spot,
+spilling **40%** (human) / **60%** (Sasquatch) of the bin on the way; then a
+3.5 s / 5 s immunity so it can't re-grab. No visitors in the hangar bay or
+the balance sims; the save schema is unchanged.
+
 ## Bots (character select — 6, three unlock by lifetime best level)
 
 Stats are the **run starting values**; meta upgrades multiply on top

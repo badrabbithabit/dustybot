@@ -55,4 +55,9 @@ export const sfx = {
   click() { blip(520, 0.05, 'square', 0.12); },
   boost() { noise(0.25, 0.15, 1200); blip(90, 0.25, 'sawtooth', 0.12, 60); },
   dump() { noise(0.25, 0.2, 400); blip(150, 0.2, 'triangle', 0.2, -60); },
+  // Wandering visitors (VISITORS_PLAN.md §7).
+  footstep() { blip(75 + Math.random() * 25, 0.05, 'sine', 0.07, -25); },
+  grab() { blip(720, 0.14, 'triangle', 0.22, -420); },
+  roar() { blip(85, 0.5, 'sawtooth', 0.16, -40); noise(0.5, 0.12, 300); },
+  drop() { noise(0.18, 0.22, 250); blip(110, 0.16, 'sine', 0.18, -45); },
 };

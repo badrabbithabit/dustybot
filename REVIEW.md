@@ -205,3 +205,62 @@ Supersedes the fixed-`LAYOUTS` approach described above (P3/P5 referenced the ol
 - 2400-level sweep: 0 invalid, 0 fallbacks, avg 4.91 obstacles (old rooms were 3–5).
 - Full unit suite: 21/21 pass (`npm test`).
 
+---
+
+## Wandering visitors QA (2026-09 release, v1.2.0)
+
+**What was built** — `js/visitors.js` (new, DOM-free): deterministic spawn
+schedule (`schedule(level, runSeed)` — one human per 3-level block, one
+Sasquatch per 10-level window mid-level, 22% mid-level human roll), solid
+bodies via `world.bodies`, sticky feet that relocate motes, and the
+grab → carry → drop sequence with bin spill and post-drop immunity. Wiring in
+`js/game.js` (toasts with a Sasquatch-overwrite guard, input lock + dock-dump
+skip while carried, reset on level/run/menu change); draw order in
+`world.render` is dust → visitors → bot (carried bot on top of the hands);
+`js/help.js` gained a VISITORS section; PLAN.md documents the feature.
+
+**Invariants tested** (`test/visitors.test.js`):
+- the dust conservation law `dust.spawned == floor + stuck + bot.bin +
+  game._cleared` (see VISITORS_PLAN.md §4): a relocated mote (sticky feet, bin
+  spill) never changes `dust.spawned`, a mote taken by `takeNear` is always put
+  back before the visitor despawns, and one that cannot be placed is credited
+  via `visitors.unplaced`. This keeps `_cleared >= dust.spawned` reachable —
+  the level can never be soft-locked.
+- one visitor at a time; deferred spawns skip after their cap.
+- drop targets are free for the bot, outside the dock strip, ≥ 3.2 u from the
+  dock **and clear of the visitor's own body** (visitors are solid); spawn
+  points ≥ 8 u from the bot and never in the dock strip.
+- immunity blocks an immediate re-grab and expires; schedule is deterministic
+  per seed and differs across seeds.
+- **soak**: 3 real `generateLevel` layouts × 60 s of frames with a wandering
+  bot, a loaded bin and a forced carry — the conservation law is asserted
+  EVERY frame, `bot.bin` never goes negative, `dust.spawned` never drifts, and
+  the bot is never left standing inside a solid body.
+
+**Review round 1 (pre-ship) found and fixed:**
+1. **BLOCKER — unclearable levels.** The first cut had `dust.drop()` bump
+   `dust.spawned` for RELOCATED motes. Every sticky-foot drop or bin spill
+   then raised the clear target without adding a dumpable mote, so any grab
+   with a non-empty bin made `_cleared >= dust.spawned` unreachable (no fail
+   state exists to rescue the run). Fixed: `_spawnPiece(..., counts)` — only
+   genuinely new motes (level scatter, puff splinters) raise the total.
+2. **MAJOR — pinned player.** The bot was set down at the carry target, i.e.
+   under the visitor's solid body, so every `isFree` step failed until the
+   visitor walked away (~1.3 s of helpless player after every carry). Fixed:
+   `_setDownSpot` sets the bot `v.r + BOT_R + 0.4` away, validated against
+   `world.isFree` (which already sees `world.bodies`).
+3. Exiting visitors now honour the `avoidR` rule (they were called with
+   `bot = null`, so a leaving Sasquatch could pin the bot against a wall).
+4. `world.shakeT` now decays with dt in `game.update` instead of `*= 0.9` per
+   frame (frame-rate dependent, and it decayed while paused).
+5. The Sasquatch-toast lock (`_sasToastT`) is cleared in `loadLevel`/`newRun`
+   so it cannot leak into the next level and swallow human toasts.
+6. `_nearestMote` compared a squared distance against a linear radius.
+
+**Known limitations** — the save schema is unchanged (nothing visitor-related
+persists); the hangar Auto-Bay and `tools/sim-*.mjs` deliberately have no
+visitors; carry/spill toasts share the single toast slot (Sasquatch wins);
+spilled motes are always common `dust` (the bin stores a count, not types, so
+the value of what fell out is not recoverable).
+
+
