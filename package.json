@@ -1,6 +1,6 @@
 {
   "name": "dusty-bot",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "2D roguelike robot vacuum — static site, no build step. Tests only.",
   "type": "module",

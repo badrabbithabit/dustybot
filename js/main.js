@@ -27,6 +27,11 @@ async function checkForUpdate() {
   } catch { /* offline or file:// — stay silent */ }
 }
 checkForUpdate();
+// A tab left open across a deploy never re-checks, so the player keeps playing
+// the old bundle and never sees the RELOAD prompt. Poll every 5 minutes (the
+// fetch is 23 bytes and no-store; the banner only appears if the server is
+// genuinely newer, so this is silent otherwise).
+setInterval(checkForUpdate, 5 * 60 * 1000);
 
 // Visible on-page error trap (mobile-friendly, no DevTools needed).
 function __showErr(label, e) {
@@ -110,6 +115,9 @@ addEventListener('mouseup', () => setBoost(false));
 renderHelp($('instructions-body'));
 renderHelp($('help-body'));
 
+// Which build is actually running (stale-cache diagnosis; see _headers).
+$('build-stamp').textContent = `build v${VERSION}`;
+
 $('btn-instructions-start').onclick = () => {
   Audio.resumeAudio(); Audio.sfx.click();
   UI.hide('screen-instructions');
@@ -150,12 +158,22 @@ addEventListener('keydown', e => {
 // ---- main loop ----
 const hangarCv = $('hangar-cv'); // null until the element exists; render() is null-safe
 let last = performance.now();
+const _frameErrs = new Set();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  game.update(dt);
-  world.render(game);
-  if (game._screen === 'hangar' && game.hangar) game.hangar.render(hangarCv);
+  // A throw inside update/render must NOT break the rAF chain: it used to
+  // freeze the canvas with no explanation (on a phone there is no console, and
+  // the red banner is the only clue). Report each distinct error once and keep
+  // the loop alive so the game stays playable/visible.
+  try {
+    game.update(dt);
+    world.render(game);
+    if (game._screen === 'hangar' && game.hangar) game.hangar.render(hangarCv);
+  } catch (e) {
+    const key = String((e && e.message) || e);
+    if (!_frameErrs.has(key)) { _frameErrs.add(key); __showErr('frame', e); }
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

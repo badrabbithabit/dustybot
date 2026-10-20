@@ -1,0 +1,21 @@
+# GitHub Pages response headers (deployed as-is; see PLAN.md "Release contract").
+#
+# Why: index.html carries ?v=<version> cache-busters for the ENTRY bundle only.
+# Every other module is imported by relative URL with no query string
+# (js/world.js, js/game.js, ...), and Pages' default `Cache-Control: max-age=600`
+# lets those be served up to 10 minutes stale. A returning player can then get
+# a NEW main.js/game.js on top of an OLD world.js (or the reverse) — mixed
+# module versions brick the rAF loop (the canvas freezes on START) and the
+# update banner cannot help, because the running bundle already looks current.
+#
+# max-age=0 + must-revalidate turns each of these into a conditional GET; Pages
+# sends ETags, so a hit costs a 304 and the content is always the deployed one.
+# Fonts/images/icons keep the default long cache on purpose.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/version.json
+  Cache-Control: public, max-age=0, must-revalidate
+/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+/*.css
+  Cache-Control: public, max-age=0, must-revalidate

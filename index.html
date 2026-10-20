@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./css/style.css?v=1.2.0">
+<link rel="stylesheet" href="./css/style.css?v=1.2.1">
 <title>Dusty Bot — 2D Vacuum Roguelike</title>
 </head>
 <body>
@@ -64,6 +64,9 @@
   <button id="btn-hangar" class="big small">HANGAR (upgrades)</button>
   <div id="offline-toast" class="hidden"></div>
   <div id="best-line" class="best">best: 0:00 · 0 runs</div>
+  <!-- Which build this browser is actually running: the first thing to check
+       when something looks stale (Pages caches js/ for 10 min by default). -->
+  <div id="build-stamp" class="best"></div>
 </div>
 
 <!-- Character select -->
@@ -117,7 +120,7 @@
   <button id="btn-update-reload">RELOAD</button>
 </div>
 </body>
-<script type="module" src="./js/main.js?v=1.2.0"></script>
+<script type="module" src="./js/main.js?v=1.2.1"></script>
 </html>
 
 
