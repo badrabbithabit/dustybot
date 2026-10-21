@@ -263,4 +263,48 @@ visitors; carry/spill toasts share the single toast slot (Sasquatch wins);
 spilled motes are always common `dust` (the bin stores a count, not types, so
 the value of what fell out is not recoverable).
 
+---
+
+## Round 3 — after the 1.2.0 deploy (v1.2.1, v1.2.2)
+
+The player reported "START doesn't work" and "no update prompt" on the live
+site. Two separate things came out of it, one of them a blocker the two review
+rounds had missed.
+
+**Visitors were frozen statues.** `Visitors._step` validated every candidate
+step with `world.isFree(nx, ny, v.r)` — but `world.bodies` already held the
+visitor's own circle, so the visitor was walled in by itself and travelled
+0.00 u. It spawned, stood still, never shed foot motes, never exited, and a
+carry only ever ended on the hard cap. Nothing in the suite asserted
+*displacement*, so 70/70 was green. A flaky sticky-feet test (it passed ~1 in 6
+runs) is what led to it. Fix: `world.blocked/isFree` accept an `ignore` body,
+`_syncBodies` keeps one stable body object per visitor, `_step` passes it.
+New test asserts a visitor actually travels and leaves the level.
+
+**Two more bugs the walking fix unmasked** (they were unreachable while nobody
+moved): an exiting visitor could engulf the bot, after which `world.isFree`
+trapped the player inside a body — the bot's circle is now solid to visitors
+whenever a grab is not the intent; and the carried bot is only moved to a spot
+it could legally occupy, instead of being dragged through furniture by hands
+that path-check only the visitor's own radius.
+
+**Release/cache finding.** Pages serves *everything* with
+`Cache-Control: max-age=600`, including `index.html`; only the entry script
+carries `?v=`. A returning player can therefore run a new `main.js` on top of
+modules cached from the previous build. `_headers` is published but **ignored**
+for this Actions-deployed project page (verified live, both bare and
+`/dustybot/`-prefixed patterns). Query-string rewriting of every import was
+tried and **reverted**: node keys modules by URL, so `./upgrades.js?v=` and
+`./upgrades.js` are two instances of `BALANCE` — that is exactly what made the
+sticky-feet test flaky. What shipped instead: an inline `window.__APP_VERSION__`
+stamp in `index.html` compared with the imported `VERSION` (a disagreement means
+the graph is mixed -> reload banner), `checkForUpdate()` polling every 5 min so a
+tab left open across a deploy gets prompted, a `build v<version>` line on the
+menu, and a try/catch around `update()/render()` so one throw can no longer kill
+the rAF loop and freeze the canvas.
+
+**Lesson for the next feature:** assert behaviour, not just invariants. A test
+that a system's state is consistent will happily pass while the system does
+nothing at all.
+
 
