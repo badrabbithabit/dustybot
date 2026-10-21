@@ -184,8 +184,15 @@ export class Visitors {
         const nx = axis === 'x' ? v.x + dir * step : v.x;
         const ny = axis === 'y' ? v.y + dir * step : v.y;
         if (ny < GEN.STRIP_Y) break; // never walk into the dock strip
-        if (this.immune && bot && Math.hypot(nx - bot.x, ny - bot.y) < V.avoidR) break;
-        if (!this.world.isFree(nx, ny, v.r)) break;
+        // The bot's circle is solid to the visitor whenever a grab is not the
+        // intent: while immune, and on the way out (an exiting visitor must not
+        // engulf the player — that would leave the bot inside a body and
+        // world.isFree would trap it). Otherwise the overlap IS the grab (§5).
+        if ((this.immune || v.state === 'exit') && bot
+          && Math.hypot(nx - bot.x, ny - bot.y) < Math.max(V.avoidR, v.r + BALANCE.bot.radius)) break;
+        // v._body is this visitor's own circle in world.bodies — excluded, or a
+        // visitor would be walled in by itself and never move an inch.
+        if (!this.world.isFree(nx, ny, v.r, v._body)) break;
         if (axis === 'x') v.x = nx; else v.y = ny;
         remaining -= step; moved += step;
       }
@@ -391,8 +398,13 @@ export class Visitors {
     // so at a wall the dangled bot would otherwise poke through the boundary.
     const h = this._hand(v);
     const R = BALANCE.bot.radius;
-    bot.x = Math.min(BALANCE.arena.w - R, Math.max(R, h.x));
-    bot.y = Math.min(BALANCE.arena.h - R, Math.max(R, h.y));
+    const px = Math.min(BALANCE.arena.w - R, Math.max(R, h.x));
+    const py = Math.min(BALANCE.arena.h - R, Math.max(R, h.y));
+    // Only drag the bot somewhere it could legally stand. The visitor path-
+    // checks its OWN body (r 1.1); the bot hangs 0.8 u ahead of the hands, so
+    // a desk or crate can sit exactly where the bot would be pinned. Park it
+    // instead of phasing it through furniture (soak caught this).
+    if (this.world.isFree(px, py, R)) { bot.x = px; bot.y = py; }
     bot.vx = 0; bot.vy = 0;
 
     const si = sas ? V.spillInterval.sas : V.spillInterval.human;
@@ -467,7 +479,13 @@ export class Visitors {
     const b = this.world.bodies;
     if (!b) return;
     b.length = 0;
-    for (const v of this.list) b.push({ x: v.x, y: v.y, r: v.r });
+    for (const v of this.list) {
+      // One stable object per visitor: _step passes it as world.isFree's
+      // `ignore` argument (identity comparison), so it must not be rebuilt.
+      const body = v._body || (v._body = { x: v.x, y: v.y, r: v.r });
+      body.x = v.x; body.y = v.y; body.r = v.r;
+      b.push(body);
+    }
   }
 
   // Illustrated people (§6); the fade/alpha lives in drawVisitor.

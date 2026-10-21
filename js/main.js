@@ -33,6 +33,16 @@ checkForUpdate();
 // genuinely newer, so this is silent otherwise).
 setInterval(checkForUpdate, 5 * 60 * 1000);
 
+// ---- Mixed-build detector ----
+// Pages serves js/* with max-age=600 and index.html only cache-busts the ENTRY
+// script, so a returning player can run a fresh main.js on top of modules still
+// in cache from the previous build (or the reverse). version.js is just another
+// module, so it can be the stale one. index.html carries the truth inline; if
+// that stamp disagrees with what this bundle imported, the graph is mixed —
+// tell the player to reload instead of letting them debug half an update.
+const _stamp = (typeof window !== 'undefined' && window.__APP_VERSION__) || '';
+if (_stamp && _stamp !== VERSION) UI.showUpdateBanner(_stamp, 'This page mixed two builds');
+
 // Visible on-page error trap (mobile-friendly, no DevTools needed).
 function __showErr(label, e) {
   let el = document.getElementById('__err');

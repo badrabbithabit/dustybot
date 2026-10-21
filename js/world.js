@@ -194,11 +194,14 @@ export class World {
   }
 
   // Is a point inside any obstacle rect or moving body (with optional padding)?
-  blocked(x, y, pad = 0) {
+  // `ignore` skips one specific body: a visitor must not be blocked by its own
+  // circle while stepping (Visitors._step passes v._body).
+  blocked(x, y, pad = 0, ignore = null) {
     for (const o of this.obstacles) {
       if (x > o.x - pad && x < o.x + o.w + pad && y > o.y - pad && y < o.y + o.h + pad) return true;
     }
     for (const b of this.bodies) {
+      if (b === ignore) continue;
       const dx = x - b.x, dy = y - b.y, rad = b.r + pad;
       if (dx * dx + dy * dy < rad * rad) return true;
     }
@@ -206,9 +209,9 @@ export class World {
   }
 
   // A point the bot (radius r) can occupy: in-bounds and clear of obstacles.
-  isFree(x, y, r = BALANCE.bot.radius) {
+  isFree(x, y, r = BALANCE.bot.radius, ignore = null) {
     if (x < r || y < r || x > this.W - r || y > this.H - r) return false;
-    return !this.blocked(x, y, r);
+    return !this.blocked(x, y, r, ignore);
   }
 
   // Pre-render the floor with a real per-theme texture, then vignette.

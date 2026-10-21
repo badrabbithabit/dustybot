@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./css/style.css?v=1.2.1">
+<link rel="stylesheet" href="./css/style.css?v=1.2.2">
 <title>Dusty Bot — 2D Vacuum Roguelike</title>
 </head>
 <body>
@@ -120,7 +120,11 @@
   <button id="btn-update-reload">RELOAD</button>
 </div>
 </body>
-<script type="module" src="./js/main.js?v=1.2.1"></script>
+<!-- The deployed build stamp, inline so it is always the page the server just
+     served. main.js compares it with the VERSION it imported: a disagreement
+     means the module graph is mixed (Pages caches js/ for 10 min). -->
+<script>window.__APP_VERSION__ = '1.2.2';</script>
+<script type="module" src="./js/main.js?v=1.2.2"></script>
 </html>
 
 

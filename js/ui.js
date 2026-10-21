@@ -11,10 +11,14 @@ export function showAll(hideList, showId) {
 }
 
 // Persistent, dismissible banner for "a new build is deployed" (see checkForUpdate in main.js).
-export function showUpdateBanner(newVersion) {
+// `reason` reuses the banner for the mixed-build case, where the wording is
+// different (the bundle is not merely old — parts of it disagree).
+export function showUpdateBanner(newVersion, reason = '') {
   const el = $('update-banner');
   if (!el) return;
-  $('update-banner-text').textContent = `New version available (${newVersion}).`;
+  $('update-banner-text').textContent = reason
+    ? `${reason} — reload to fix (v${newVersion}).`
+    : `New version available (${newVersion}).`;
   show('update-banner');
 }
 

@@ -29,6 +29,16 @@ test('package.json matches js/version.js', () => {
   assert.equal(vPkg, vJs);
 });
 
+// Cache contract: index.html is the only file guaranteed fresh, and it carries
+// both the entry cache-buster and the inline build stamp main.js compares with
+// the VERSION it imported. If they drift, the mixed-build detector is blind.
+test('index.html stamps the build inline (mixed-build detector)', () => {
+  const html = read('index.html');
+  const stamp = html.match(/__APP_VERSION__\s*=\s*'([^']+)'/);
+  assert.ok(stamp, 'index.html must set window.__APP_VERSION__ inline');
+  assert.equal(stamp[1], vJs, 'inline build stamp must match js/version.js');
+});
+
 // Wall-clock assertions are the reason the Pages deploy failed once: a 1 ms
 // tick between two Date.now() calls blows a 1e-9 tolerance on CI but not locally.
 // Pure functions take `now` — pass a fixed timestamp instead.

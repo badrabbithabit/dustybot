@@ -17,19 +17,20 @@ function makeWorld(obstacles = []) {
   return {
     W, H, obstacles, bodies: [], shakeT: 0, scale: 1, ox: 0, oy: 0,
     toScreen(x, y) { return { x, y }; },
-    blocked(x, y, pad = 0) {
+    blocked(x, y, pad = 0, ignore = null) {
       for (const o of this.obstacles) {
         if (x > o.x - pad && x < o.x + o.w + pad && y > o.y - pad && y < o.y + o.h + pad) return true;
       }
       for (const b of this.bodies) {
+        if (b === ignore) continue;
         const dx = x - b.x, dy = y - b.y, rad = b.r + pad;
         if (dx * dx + dy * dy < rad * rad) return true;
       }
       return false;
     },
-    isFree(x, y, r = BALANCE.bot.radius) {
+    isFree(x, y, r = BALANCE.bot.radius, ignore = null) {
       if (x < r || y < r || x > W - r || y > H - r) return false;
-      return !this.blocked(x, y, r);
+      return !this.blocked(x, y, r, ignore);
     },
   };
 }
@@ -149,6 +150,27 @@ test('world.bodies: a live visitor makes blocked()/isFree() true over it', () =>
 });
 
 // -------------------------------------------------------- sticky feet (§4)
+
+// Regression: a visitor must not be walled in by its own body. world.bodies is
+// synced before _step, so without the isFree(..., ignore) exemption every
+// visitor froze at its spawn point — no walking, no foot drops, no exit, and a
+// carry that never reached a drop target. Assert real travel, then departure.
+test('visitors walk: a live visitor travels, then leaves the level', () => {
+  const { world, vis } = setup();
+  const bot = makeBot(2, 41); // far from the visitor: this test is about walking
+  vis._trySpawn('human', bot);
+  const v = vis.list[0];
+  const p0 = { x: v.x, y: v.y };
+  run(vis, bot, 2);
+  const travelled = Math.hypot(v.x - p0.x, v.y - p0.y);
+  assert.ok(travelled > 1.5,
+    `visitor travelled only ${travelled.toFixed(2)}u in 2 s (human speed ${BALANCE.visitors.humanSpeed}/s)`);
+
+  // Life cap (10-15 s) then it walks to an edge and despawns, body and all.
+  for (let i = 0; i < Math.round(40 / DT) && vis.list.length; i++) vis.update(DT, bot, {});
+  assert.equal(vis.list.length, 0, 'visitor must leave the level on its own');
+  assert.equal(world.bodies.length, 0, 'its body must leave world.bodies too');
+});
 
 test('sticky feet: takeNear sticks a mote; despawn re-drops it (count/spawned invariant)', () => {
   const { world, dust, vis } = setup();
@@ -391,12 +413,16 @@ test('soak: 3 real layouts x 60 s — motes conserved, spawn total frozen', () =
         `lv${level} f${f}: mote conservation broken`);
       assert.ok(bot.bin >= 0, `lv${level} f${f}: bin went negative`);
       assert.ok(dust.spawned === spawned0, `lv${level} f${f}: relocation inflated dust.spawned`);
+      // The bot must never end up somewhere it could not legally stand — the
+      // same clearance its own movement uses. NOT radius+0.2: a visitor that is
+      // about to grab legitimately closes to v.r + BOT_R (2.2 u centre-to-
+      // centre), which is 1.1 u of gap and perfectly legal.
       if (!vis.carrying)
-        assert.ok(world.isFree(bot.x, bot.y, BALANCE.bot.radius + 0.2),
+        assert.ok(world.isFree(bot.x, bot.y, BALANCE.bot.radius),
           `lv${level} f${f}: the bot is standing inside something solid`);
     }
     assert.equal(dust.spawned, spawned0, `lv${level}: the level total must not drift`);
-    assert.ok(grabs === 1, `lv${level}: the soak must exercise a carry (got ${grabs})`);
+    assert.ok(grabs >= 1, `lv${level}: the soak must exercise a carry (got ${grabs})`);
     assert.ok(frames === Math.round(60 / DT));
   }
 });
